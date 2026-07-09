@@ -1,0 +1,28 @@
+# MacOS
+.DS_Store
+
+# Local Python environments and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# Local secrets and runtime config
+.env
+.env.*
+*.env
+
+# Editor settings
+.idea/
+.vscode/
+.codex-backup/
+
+
+
+
