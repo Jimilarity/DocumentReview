@@ -1,704 +1,739 @@
-#review.py
-import asyncio
-import json
-import os
-from dataclasses import dataclass
-from operator import add
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, Iterable, List, Type
 
-from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
-from langchain_core.tools import tool
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langgraph.types import RunnableConfig
-from pydantic import ValidationError
-
-env_path = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(env_path)
-
-from agent import Documentreview, ReviewResult
-from constants import ErrorCode
-from error import ReviewError
-from error_handler import (
-    CURRENT_NODE,
-    CURRENT_PDF_PATH,
-    CURRENT_RULE_INDEX,
-    LOGGER,
-    details_from_exception as _details_from_exception,
-    log_exception as _log_exception,
-    raise_with_context as _raise_with_context,
-    safe_write_error_report as _safe_write_error_report,
+from agents import DocumentMappingAgents
+from cache_paths import get_cache_paths
+from constants import (
+    RULES_PATH,
+    STRUCTURED_FIELD_CACHE_SCHEMA_VERSION,
+    ReviewExecutorType,
+    SupportExecutorType,
 )
-from model_config import build_vision_model
-from rule_utils import load_rule_list
-from tool_utils import dedupe_tools
-from utils import (
-    async_read_json,
-    atomic_write_json,
-    combine_images,
-    image_to_base64,
-    sanitize_filename,
+from directory_info import normalize_directory_info
+from review_config import (
+    load_context_sensitive_settings,
+    load_enabled_executor_types,
+    load_enabled_support_executor_types,
 )
+from human_support import HumanSupportExecutor
+from human_support.result_coordinator import HumanSupportResultCoordinator
+from reviewers.base import (
+    BaseReviewExecutor,
+    DocumentReviewExecutor,
+    ReviewSettings,
+)
+from reviewers.case_level import CaseLevelReviewExecutor
+from reviewers.context_free import ContextFreeReviewExecutor
+from reviewers.context_sensitive import ContextSensitiveReviewExecutor
+from reviewers.document_preparation import DocumentReviewPreparationService
+from reviewers.result_aggregation import merge_rule_results
+from reviewers.result_coordinator import ReviewResultCoordinator
+from rules.rule_set import RuleSet, RuleSetBuilder
+from rules.filtering import (
+    filter_human_support_rules,
+    human_support_document_names,
+    retrieval_enhancement_module_names,
+)
+from rules.rule_type import decode_rule_type
+from structured_field_cache import (
+    StructuredFieldCache,
+    build_structured_source_fingerprint,
+)
+from utils import read_json
 
 
-MCP_CONFIG = {
-    "law_retrieval_semantic": {
-        "transport": "http",
-        "url": os.environ.get("LAW_RETRIEVAL_SEMANTIC_URL"),
-        "headers": {
-            "Authorization": f"Bearer {os.environ.get('LAW_RETRIEVAL_SEMANTIC_KEY')}"
-        },
-    },
-    "law_retrieval_keyword": {
-        "transport": "http",
-        "url": os.environ.get("LAW_RETRIEVAL_KEYWORD_URL"),
-        "headers": {
-            "Authorization": f"Bearer {os.environ.get('LAW_RETRIEVAL_KEYWORD_KEY')}"
-        },
-    },
+ExecutorClass = Type[BaseReviewExecutor]
+
+EXECUTOR_REGISTRY: Dict[ReviewExecutorType, ExecutorClass] = {
+    ReviewExecutorType.CONTEXT_FREE: ContextFreeReviewExecutor,
+    ReviewExecutorType.CONTEXT_SENSITIVE: ContextSensitiveReviewExecutor,
+    ReviewExecutorType.CASE_LEVEL: CaseLevelReviewExecutor,
+}
+DOCUMENT_EXECUTOR_TYPES = (
+    ReviewExecutorType.CONTEXT_FREE,
+    ReviewExecutorType.CONTEXT_SENSITIVE,
+)
+SUPPORT_EXECUTOR_REGISTRY = {
+    SupportExecutorType.HUMAN_SUPPORT: HumanSupportExecutor,
 }
 
 
-@dataclass
-class ReviewRuntime:
-    dr_instance: Documentreview
-    tool_node: ToolNode
-    tools: List[Any]
+def select_executor_class(
+    rule_type: int,
+    executor: ReviewExecutorType = ReviewExecutorType.CONTEXT_FREE,
+) -> ExecutorClass:
+    """解析规则类型并返回配置标识对应的叶子执行器。"""
+
+    decode_rule_type(rule_type)
+    return EXECUTOR_REGISTRY[executor]
 
 
-class ReviewState(TypedDict, total=False):
-    pdf_path: str
-    rule_list: List[Dict[str, Any]]
-    rule_id: int
-    rule_results: Annotated[List[Dict[str, Any]], add]
-    review_completed: bool
-    error_code: Optional[int]
-    error_message: Optional[str]
-    error_details: Optional[Dict[str, Any]]
+def _executor_type_for_class(
+    executor_class: ExecutorClass,
+) -> ReviewExecutorType:
+    for executor_type, registered_class in EXECUTOR_REGISTRY.items():
+        if issubclass(executor_class, registered_class):
+            return executor_type
+    raise ValueError(f"未注册的审查执行器: {executor_class.__name__}")
 
 
-class SingleRuleState(TypedDict, total=False):
-    rule: Dict[str, Any]
-    dir_info: List[Dict[str, Any]]
-    meta_info: Dict[str, Any]
-    messages: Annotated[List[Any], add_messages]
-    result: Optional[Dict[str, Any]]
-    error: Optional[str]
+def _ordered_union(groups: Iterable[Iterable[str]]) -> List[str]:
+    return list(dict.fromkeys(name for group in groups for name in group))
 
 
-@tool
-async def call_vlm(section_id: int, task: str) -> str:
-    """调用多模态模型，根据指定文书编号和任务描述执行审查辅助任务。"""
-    node_token = CURRENT_NODE.set("tool.call_vlm")
-    try:
-        pdf_path = CURRENT_PDF_PATH.get()
-        if not pdf_path:
-            raise RuntimeError("CURRENT_PDF_PATH 未设置")
-
-        pdf_name = Path(pdf_path).stem
-        dir_path = Path("dir_cache") / pdf_name / "dir_info.json"
-        list_path = Path("pdf_cache") / pdf_name / "image_list.json"
-
-        dir_info = await async_read_json(dir_path)
-        image_list = await async_read_json(list_path)
-
-        if not isinstance(dir_info, list):
-            raise TypeError(f"{dir_path} 应为列表，实际为 {type(dir_info).__name__}")
-        if not isinstance(image_list, list):
-            raise TypeError(f"{list_path} 应为列表，实际为 {type(image_list).__name__}")
-        if not 1 <= section_id <= len(dir_info):
-            raise IndexError(
-                f"section_id={section_id} 超出有效范围 1..{len(dir_info)}"
-            )
-
-        current_section = dir_info[section_id - 1]
-        if "section_page" not in current_section:
-            raise KeyError(f"目录项 {section_id} 缺少 section_page")
-        if "section_name" not in current_section:
-            raise KeyError(f"目录项 {section_id} 缺少 section_name")
-
-        start_page = int(current_section["section_page"])
-        if section_id == len(dir_info):
-            end_page = len(image_list)
-        else:
-            next_section = dir_info[section_id]
-            if "section_page" not in next_section:
-                raise KeyError(f"目录项 {section_id + 1} 缺少 section_page")
-            end_page = int(next_section["section_page"])
-            if end_page == start_page:
-                end_page = start_page + 1
-
-        section_images = image_list[start_page:end_page]
-        if not section_images:
-            raise FileNotFoundError(
-                f"目录项 {section_id} 没有对应页面，页面范围为 [{start_page}, {end_page})"
-            )
-
-        raw_name = current_section["section_name"]
-        section_name = sanitize_filename(raw_name)
-        section_path = await asyncio.to_thread(
-            combine_images,
-            section_images,
-            f"{section_name}_{section_id}.jpeg",
-        )
-        image_base64 = await asyncio.to_thread(image_to_base64, section_path)
-
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": task},
-                {"type": "text", "text": f"以下是{section_name}"},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_base64}"
-                    },
-                },
-            ]
-        )
-        response = await build_vision_model().ainvoke([message])
-        if not getattr(response, "content", None):
-            raise RuntimeError("多模态模型返回了空 content")
-        return response.content
-    except Exception as exc:
-        _raise_with_context(
-            exc,
-            "call_vlm",
-            section_id=section_id,
-            task_preview=task[:200],
-        )
-    finally:
-        CURRENT_NODE.reset(node_token)
+def _required_document_names(
+    executor_type: ReviewExecutorType,
+    candidate_rules: List[Dict[str, Any]],
+) -> List[str]:
+    executor_class = EXECUTOR_REGISTRY[executor_type]
+    if not issubclass(executor_class, DocumentReviewExecutor):
+        return []
+    names = list(executor_class.required_document_names(candidate_rules))
+    if executor_type is ReviewExecutorType.CONTEXT_SENSITIVE:
+        names.extend(load_context_sensitive_settings()["prewarm_fields"])
+    return list(dict.fromkeys(names))
 
 
-async def build_review_runtime(file_path: str) -> ReviewRuntime:
-    CURRENT_PDF_PATH.set(str(file_path))
-    node_token = CURRENT_NODE.set("build_review_runtime")
-    tools: List[Any] = [call_vlm]
-
-    try:
-        try:
-            mcp_client = MultiServerMCPClient(MCP_CONFIG)
-            mcp_tools = await mcp_client.get_tools()
-            tools.extend(mcp_tools)
-            LOGGER.info("MCP tools loaded: %s", [tool.name for tool in mcp_tools])
-        except Exception as exc:
-            # MCP 检索工具属于可选依赖。失败时继续使用 VLM，但完整 traceback 会写入日志。
-            details = _log_exception(exc, "load_mcp_tools")
-            LOGGER.warning(
-                "MCP tools unavailable; continuing with local tools only. error_id=%s",
-                details["error_id"],
-            )
-
-        tools = dedupe_tools(tools)
-        tool_node = ToolNode(tools, handle_tool_errors=True)
-        dr_instance = Documentreview(review_tools=tools)
-        return ReviewRuntime(
-            dr_instance=dr_instance,
-            tool_node=tool_node,
-            tools=tools,
-        )
-    except Exception as exc:
-        _raise_with_context(exc, "build_review_runtime")
-    finally:
-        CURRENT_NODE.reset(node_token)
-
-
-def _build_single_rule_subgraph(runtime: ReviewRuntime):
-    dr_instance = runtime.dr_instance
-    tool_node = runtime.tool_node
-
-    async def initialize(state: SingleRuleState, config: RunnableConfig):
-        node_token = CURRENT_NODE.set("single_rule.initialize")
-        try:
-            prompt = dr_instance.build_task_prompt(
-                "document_review",
-                meta_info=state["meta_info"],
-                dir_info=state["dir_info"],
-                rule_info=state["rule"],
-            )
-            return {"messages": [HumanMessage(content=prompt)]}
-        except Exception as exc:
-            _raise_with_context(exc, "single_rule.initialize")
-        finally:
-            CURRENT_NODE.reset(node_token)
-
-    async def call_model(state: SingleRuleState, config: RunnableConfig):
-        node_token = CURRENT_NODE.set("single_rule.call_model")
-        try:
-            response = await dr_instance.review_agent.ainvoke(
-                {"messages": state["messages"]},
-                config=config,
-            )
-            messages = response.get("messages") if isinstance(response, dict) else None
-            if not messages:
-                raise RuntimeError(f"review_agent 返回结果缺少 messages: {response!r}")
-            return {"messages": [messages[-1]]}
-        except Exception as exc:
-            _raise_with_context(
-                exc,
-                "single_rule.call_model",
-                message_count=len(state.get("messages", [])),
-            )
-        finally:
-            CURRENT_NODE.reset(node_token)
-
-    def should_continue(state: SingleRuleState):
-        node_token = CURRENT_NODE.set("single_rule.route")
-        try:
-            messages = state.get("messages", [])
-            if not messages:
-                raise RuntimeError("路由时 messages 为空")
-            last_message = messages[-1]
-            if getattr(last_message, "tool_calls", None):
-                return "tools"
-            return "finalize"
-        except Exception as exc:
-            _raise_with_context(exc, "single_rule.route")
-        finally:
-            CURRENT_NODE.reset(node_token)
-
-    async def execute_tools(state: SingleRuleState, config: RunnableConfig):
-        node_token = CURRENT_NODE.set("single_rule.tools")
-        try:
-            tool_results = await tool_node.ainvoke(
-                state["messages"],
-                config=config,
-            )
-            if tool_results is None:
-                raise RuntimeError("ToolNode 返回 None")
-            return {"messages": tool_results}
-        except Exception as exc:
-            _raise_with_context(exc, "single_rule.tools")
-        finally:
-            CURRENT_NODE.reset(node_token)
-
-    async def finalize(state: SingleRuleState, config: RunnableConfig):
-        node_token = CURRENT_NODE.set("single_rule.finalize")
-        output_text: Any = None
-        json_output_text = ""
-        try:
-            messages = state.get("messages", [])
-            if not messages:
-                raise RuntimeError("finalize 时 messages 为空")
-
-            output_text = messages[-1].content
-            prompt = dr_instance.build_task_prompt(
-                "result_write",
-                last_response=output_text,
-            )
-            response = await dr_instance.write_agent.ainvoke(
-                [HumanMessage(content=prompt)],
-                config=config,
-            )
-            json_output_text = response.content.strip()
-            data = json.loads(json_output_text)
-            result = ReviewResult.model_validate(data).model_dump()
-        except (ValidationError, json.JSONDecodeError) as exc:
-            details = _log_exception(
-                exc,
-                "single_rule.finalize.validation",
-                writer_output=json_output_text[:4000],
-                review_output=str(output_text)[:4000],
-            )
-            result = {
-                "error": "invalid_result_json",
-                "error_details": details,
-                "raw": output_text,
-                "writer_output": json_output_text,
-                "comment": [],
-                "score": 0,
-                "confidence": "low",
-            }
-        except Exception as exc:
-            _raise_with_context(
-                exc,
-                "single_rule.finalize",
-                writer_output=json_output_text[:4000],
-                review_output=str(output_text)[:4000],
-            )
-        finally:
-            CURRENT_NODE.reset(node_token)
-
-        result["rule_index"] = state["rule"].get("序号")
-        return {"result": result}
-
-    graph = StateGraph(SingleRuleState)
-    graph.add_node("initialize", initialize)
-    graph.add_node("call_model", call_model)
-    graph.add_node("tools", execute_tools)
-    graph.add_node("finalize", finalize)
-    graph.set_entry_point("initialize")
-    graph.add_edge("initialize", "call_model")
-    graph.add_conditional_edges(
-        "call_model",
-        should_continue,
-        {"tools": "tools", "finalize": "finalize"},
+def _load_structured_cache(
+    file_path: str | Path,
+    meta_info: Dict[str, Any],
+    dir_info: List[Dict[str, Any]],
+    ocr_results: List[Dict[str, Any]],
+) -> StructuredFieldCache:
+    return StructuredFieldCache.load(
+        get_cache_paths(file_path).structured_fields,
+        schema_version=STRUCTURED_FIELD_CACHE_SCHEMA_VERSION,
+        source_fingerprint=build_structured_source_fingerprint(
+            meta_info,
+            dir_info,
+            ocr_results,
+        ),
     )
-    graph.add_edge("tools", "call_model")
-    graph.add_edge("finalize", END)
-    return graph.compile()
 
 
-async def _distribute_rules(
-    state: ReviewState,
-    config: RunnableConfig,
-    runtime: ReviewRuntime,
-) -> Dict[str, Any]:
-    node_token = CURRENT_NODE.set("distribute_rules")
-    try:
-        rule_list = state["rule_list"]
-        start_index = state["rule_id"]
-        if start_index >= len(rule_list):
-            return {"review_completed": True}
+def _resolve_document_presence(
+    cache: StructuredFieldCache,
+    document_names: List[str],
+    dir_info: List[Dict[str, Any]],
+) -> Dict[str, bool]:
+    """共享案件事实；范围扩展时废弃整份旧结构化缓存快照。"""
 
-        max_concurrency = max(
-            1, int(os.getenv("REVIEW_RULE_MAX_CONCURRENCY", "30"))
-        )
-        timeout_seconds = max(
-            1, int(os.getenv("REVIEW_RULE_TIMEOUT_SECONDS", "120"))
-        )
-        recursion_limit = max(
-            1, int(os.getenv("REVIEW_RULE_RECURSION_LIMIT", "20"))
-        )
-
-        dir_path = (
-            Path("dir_cache") / Path(state["pdf_path"]).stem / "dir_info.json"
-        )
-        meta_path = (
-            Path("meta_cache") / Path(state["pdf_path"]).stem / "meta_info.json"
-        )
-        meta_info = await async_read_json(meta_path)
-        dir_info = await async_read_json(dir_path)
-        
-        if not isinstance(meta_info, dict):
-            raise TypeError(f"{meta_path} 应为字典，实际为 {type(meta_info).__name__}")
-        if not isinstance(dir_info, list):
-            raise TypeError(f"{dir_path} 应为列表，实际为 {type(dir_info).__name__}")
-
-        subgraph = _build_single_rule_subgraph(runtime)
-        queue: asyncio.Queue[int] = asyncio.Queue()
-        for index in range(start_index, len(rule_list)):
-            queue.put_nowait(index)
-
-        result_slots: List[Optional[Dict[str, Any]]] = [
-            None
-        ] * (len(rule_list) - start_index)
-
-        def build_error_result(
-            index: int,
-            exc: BaseException,
-            stage: str = "single_rule",
-        ) -> Dict[str, Any]:
-            rule = rule_list[index]
-            details = _details_from_exception(
-                exc,
-                stage,
-                rule_position=index,
-                rule=rule,
-            )
-            LOGGER.error(
-                "rule failed. error_id=%s rule_index=%s",
-                details["error_id"],
-                rule.get("序号"),
-            )
-            return {
-                "rule_index": rule.get("序号"),
-                "error": "rule_review_exception",
-                "error_details": details,
-                "raw": (
-                    f"[{details['error_id']}] {details['exception_type']}: "
-                    f"{details['message']}"
-                ),
-                "comment": [
-                    {
-                        "section_id": [],
-                        "content": (
-                            "该规则审查执行异常，已保留为待人工复核。"
-                            f"错误编号：{details['error_id']}；"
-                            f"阶段：{details['stage']}；"
-                            f"位置：{details.get('location') or '未知'}；"
-                            f"原因：{details['exception_type']}: {details['message']}"
-                        ),
-                    }
-                ],
-                "score": 0,
-                "confidence": "low",
-            }
-
-        async def run_one_rule(index: int) -> Dict[str, Any]:
-            rule = rule_list[index]
-            rule_token = CURRENT_RULE_INDEX.set(rule.get("序号", index))
-            try:
-                rule_config = dict(config or {})
-                rule_config["recursion_limit"] = recursion_limit
-                response = await asyncio.wait_for(
-                    subgraph.ainvoke(
-                        {
-                            "rule": rule,
-                            "meta_info": meta_info,
-                            "dir_info": dir_info,
-                            "messages": [],
-                        },
-                        config=rule_config,
-                    ),
-                    timeout=timeout_seconds,
-                )
-                if not isinstance(response, dict) or "result" not in response:
-                    raise RuntimeError(f"单规则子图返回结果缺少 result: {response!r}")
-
-                result = response["result"]
-                if not isinstance(result, dict):
-                    raise TypeError(
-                        f"单规则 result 应为 dict，实际为 {type(result).__name__}"
-                    )
-                result.setdefault("rule_index", rule.get("序号"))
-                result.setdefault("comment", [])
-                result.setdefault("score", 0)
-                result.setdefault("confidence", "low")
-                return result
-            except asyncio.TimeoutError as exc:
-                return build_error_result(
-                    index,
-                    exc,
-                    stage="single_rule.timeout",
-                )
-            except Exception as exc:
-                return build_error_result(index, exc)
-            finally:
-                CURRENT_RULE_INDEX.reset(rule_token)
-
-        async def worker(worker_id: int):
-            worker_token = CURRENT_NODE.set(f"worker.{worker_id}")
-            try:
-                while True:
-                    try:
-                        index = queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        return
-
-                    try:
-                        result_slots[index - start_index] = await run_one_rule(index)
-                        LOGGER.info(
-                            "worker=%s finished rule=%s",
-                            worker_id,
-                            rule_list[index].get("序号"),
-                        )
-                    except Exception as exc:
-                        # 防止 worker 自身异常造成 queue.join() 永久等待。
-                        result_slots[index - start_index] = build_error_result(
-                            index,
-                            exc,
-                            stage="worker",
-                        )
-                    finally:
-                        queue.task_done()
-            finally:
-                CURRENT_NODE.reset(worker_token)
-
-        worker_count = min(max_concurrency, len(rule_list) - start_index)
-        workers = [
-            asyncio.create_task(worker(worker_id), name=f"review-worker-{worker_id}")
-            for worker_id in range(worker_count)
-        ]
-        await queue.join()
-        worker_outcomes = await asyncio.gather(*workers, return_exceptions=True)
-        for worker_id, outcome in enumerate(worker_outcomes):
-            if isinstance(outcome, BaseException):
-                _log_exception(
-                    outcome,
-                    "worker.gather",
-                    worker_id=worker_id,
-                )
-
-        missing_positions = [
-            start_index + offset
-            for offset, item in enumerate(result_slots)
-            if item is None
-        ]
-        if missing_positions:
-            raise RuntimeError(
-                f"以下规则没有生成任何结果: {missing_positions}"
-            )
-
-        return {
-            "rule_results": [item for item in result_slots if item is not None],
-            "rule_id": len(rule_list),
-            "review_completed": True,
-        }
-    except Exception as exc:
-        details = _details_from_exception(exc, "distribute_rules")
-        return {
-            "error_code": int(ErrorCode.UNEXPECTED_ERROR),
-            "error_message": (
-                f"[{details['error_id']}] {details['exception_type']}: "
-                f"{details['message']}"
-            ),
-            "error_details": details,
-        }
-    finally:
-        CURRENT_NODE.reset(node_token)
-
-
-def _review_router(state: ReviewState):
-    if state.get("error_code") is not None:
-        return "error_node"
-    if state.get("review_completed", False):
-        return END
-    if state["rule_id"] < len(state["rule_list"]):
-        return "distribute_rules"
-    return END
-
-
-def _error_node(state: ReviewState) -> Dict[str, Any]:
-    node_token = CURRENT_NODE.set("error_node")
-    try:
-        details = state.get("error_details") or {}
-        LOGGER.error(
-            "review stopped. error_code=%s error_id=%s message=%s",
-            state.get("error_code", ErrorCode.UNEXPECTED_ERROR),
-            details.get("error_id", "-"),
-            state.get("error_message", ""),
-        )
+    if not document_names:
         return {}
-    finally:
-        CURRENT_NODE.reset(node_token)
+    cached_presence = cache.document_presence
+    cached_mapping = cache.document_section_map
+    presence_complete = all(
+        name in cached_presence for name in document_names
+    )
+    mapping_covers_scope = not cached_mapping or all(
+        cached_presence[name] is not True or bool(cached_mapping.get(name))
+        for name in document_names
+        if name in cached_presence
+    )
+    if presence_complete and mapping_covers_scope:
+        return {name: cached_presence[name] for name in document_names}
+
+    document_presence = DocumentMappingAgents().classify_document_presence(
+        document_names,
+        dir_info,
+    )
+    fresh_cache = StructuredFieldCache(
+        cache.path,
+        schema_version=cache.schema_version,
+        source_fingerprint=cache.source_fingerprint,
+    )
+    fresh_cache.initialize_document_presence(document_presence)
+    fresh_cache.save()
+    return document_presence
 
 
-def _build_review_graph(runtime: ReviewRuntime):
-    async def distribute_rules_node(
-        state: ReviewState,
-        config: RunnableConfig,
-    ) -> Dict[str, Any]:
-        return await _distribute_rules(state, config, runtime)
+def _build_document_rule_sets(
+    file_path: str | Path,
+    rule_type: int,
+    executor_types: Iterable[ReviewExecutorType],
+) -> tuple[
+    Dict[ReviewExecutorType, RuleSet],
+    Dict[str, bool],
+]:
+    """一次判断共享 presence，再为每个执行器物化独立 RuleSet。"""
 
-    graph = StateGraph(ReviewState)
-    graph.add_node("distribute_rules", distribute_rules_node)
-    graph.add_node("error_node", _error_node)
-    graph.set_entry_point("distribute_rules")
-    graph.add_conditional_edges("distribute_rules", _review_router)
-    graph.add_edge("error_node", END)
-    return graph.compile()
+    requested_types = list(dict.fromkeys(executor_types))
+    if any(item not in DOCUMENT_EXECUTOR_TYPES for item in requested_types):
+        raise ValueError("只有文书级执行器能够通过规则文件构建 RuleSet")
+
+    cache_paths = get_cache_paths(file_path)
+    meta_info = read_json(cache_paths.metadata)
+    dir_info = normalize_directory_info(read_json(cache_paths.directory))
+    ocr_results = read_json(cache_paths.ocr_results)
+    candidate_rules_data = read_json(RULES_PATH)
+    candidate_rules = (
+        RuleSetBuilder(candidate_rules_data)
+        .for_rule_type(rule_type)
+        .build()
+        .rules
+    )
+    requirements = {
+        executor_type: _required_document_names(
+            executor_type,
+            candidate_rules,
+        )
+        for executor_type in requested_types
+    }
+    required_names = _ordered_union(requirements.values())
+    cache = _load_structured_cache(
+        file_path,
+        meta_info,
+        dir_info,
+        ocr_results,
+    )
+    document_presence = _resolve_document_presence(
+        cache,
+        required_names,
+        dir_info,
+    )
+
+    rule_sets = {
+        executor_type: (
+            RuleSetBuilder(candidate_rules_data)
+            .for_executor(
+                rule_type,
+                rule_filter=EXECUTOR_REGISTRY[executor_type].filter_rules,
+                document_presence={
+                    name: document_presence[name]
+                    for name in requirements[executor_type]
+                },
+            )
+            .build()
+        )
+        for executor_type in requested_types
+    }
+    return rule_sets, document_presence
+
+
+def _candidate_human_support_rules(rule_type: int) -> List[Dict[str, Any]]:
+    candidate_rules_data = read_json(RULES_PATH)
+    candidate_rules = (
+        RuleSetBuilder(candidate_rules_data)
+        .for_rule_type(rule_type)
+        .build()
+        .rules
+    )
+    return [
+        rule
+        for rule in candidate_rules
+        if retrieval_enhancement_module_names(rule)
+    ]
+
+
+def _ensure_human_support_document_presence(
+    file_path: str | Path,
+    required_names: List[str],
+    document_presence: Dict[str, bool],
+) -> Dict[str, bool]:
+    """补齐人工辅助独有文书，使其不依赖某个审查执行器是否启用。"""
+
+    if all(name in document_presence for name in required_names):
+        return document_presence
+    cache_paths = get_cache_paths(file_path)
+    meta_info = read_json(cache_paths.metadata)
+    dir_info = normalize_directory_info(read_json(cache_paths.directory))
+    ocr_results = read_json(cache_paths.ocr_results)
+    cache = _load_structured_cache(
+        file_path,
+        meta_info,
+        dir_info,
+        ocr_results,
+    )
+    return _resolve_document_presence(
+        cache,
+        _ordered_union([document_presence, required_names]),
+        dir_info,
+    )
+
+
+def _build_human_support_rule_set(
+    candidate_rules: List[Dict[str, Any]],
+    document_presence: Dict[str, bool],
+) -> RuleSet:
+    """人工辅助独立筛选规则，但复用业务规则选择和文书存在性。"""
+
+    return RuleSet(
+        rules=filter_human_support_rules(
+            candidate_rules,
+            document_presence,
+        )
+    )
+
+
+def build_rule_set(
+    file_path: str | Path,
+    rule_type: int,
+    *,
+    executor: ReviewExecutorType = ReviewExecutorType.CONTEXT_FREE,
+) -> RuleSet:
+    """按照原 Builder 范式构建一个执行器专属的 RuleSet。"""
+
+    rule_sets, _ = _build_document_rule_sets(
+        file_path,
+        rule_type,
+        [executor],
+    )
+    return rule_sets[executor]
+
+
+def _present_document_names(
+    document_presence: Dict[str, bool],
+) -> List[str]:
+    return [
+        name
+        for name, exists in document_presence.items()
+        if exists
+    ]
+
+
+async def prepare_context_sensitive_review(
+    file_path: str,
+    rule_type: int,
+    *,
+    settings: ReviewSettings | None = None,
+) -> Dict[str, Any]:
+    """单独准备上下文相关审查规则所需的结构化缓存。"""
+
+    rule_sets, document_presence = _build_document_rule_sets(
+        file_path,
+        rule_type,
+        [ReviewExecutorType.CONTEXT_SENSITIVE],
+    )
+    rule_set = rule_sets[ReviewExecutorType.CONTEXT_SENSITIVE]
+    probe = ContextSensitiveReviewExecutor(
+        file_path=file_path,
+        rule_set=rule_set,
+        document_section_map={},
+        settings=settings,
+    )
+    if not probe.executable_rule_indexes():
+        return {
+            "preparation_completed": False,
+            "rule_count": 0,
+            "skipped": True,
+            "reason": "no_applicable_context_sensitive_rules",
+        }
+    document_section_map = await DocumentReviewPreparationService(
+        file_path,
+        _present_document_names(document_presence),
+        settings=settings,
+    ).prepare()
+    executor = ContextSensitiveReviewExecutor(
+        file_path=file_path,
+        rule_set=rule_set,
+        document_section_map=document_section_map,
+        settings=settings,
+    )
+    return await executor.run_preparation()
+
+
+def _presence_for_custom_rule_set(
+    file_path: str,
+    executor_type: ReviewExecutorType,
+    rule_set: RuleSet,
+) -> tuple[RuleSet, Dict[str, bool]]:
+    cache_paths = get_cache_paths(file_path)
+    meta_info = read_json(cache_paths.metadata)
+    dir_info = normalize_directory_info(read_json(cache_paths.directory))
+    ocr_results = read_json(cache_paths.ocr_results)
+    required_names = _required_document_names(
+        executor_type,
+        rule_set.rules,
+    )
+    cache = _load_structured_cache(
+        file_path,
+        meta_info,
+        dir_info,
+        ocr_results,
+    )
+    document_presence = _resolve_document_presence(
+        cache,
+        required_names,
+        dir_info,
+    )
+    executor_class = EXECUTOR_REGISTRY[executor_type]
+    return (
+        RuleSet(
+            rules=executor_class.filter_rules(
+                rule_set.rules,
+                document_presence,
+            )
+        ),
+        document_presence,
+    )
+
+
+async def _run_custom_executor(
+    file_path: str,
+    rule_type: int,
+    executor_class: ExecutorClass | None,
+    rule_set: RuleSet | None,
+    settings: ReviewSettings | None,
+) -> Dict[str, Any]:
+    selected_class = executor_class or select_executor_class(rule_type)
+    executor_type = _executor_type_for_class(selected_class)
+
+    if executor_type is ReviewExecutorType.CASE_LEVEL:
+        if rule_set is not None:
+            raise ValueError("CaseLevelReviewExecutor 不接受 RuleSet")
+        executor = selected_class(file_path=file_path, settings=settings)
+        raw_results = await executor.execute_raw()
+    else:
+        if rule_set is None:
+            rule_sets, document_presence = _build_document_rule_sets(
+                file_path,
+                rule_type,
+                [executor_type],
+            )
+            selected_rule_set = rule_sets[executor_type]
+        else:
+            selected_rule_set, document_presence = (
+                _presence_for_custom_rule_set(
+                    file_path,
+                    executor_type,
+                    rule_set,
+                )
+            )
+        if not selected_rule_set.rules:
+            return _empty_review_result("no_applicable_rules")
+
+        kwargs: Dict[str, Any] = {
+            "file_path": file_path,
+            "rule_set": selected_rule_set,
+            "settings": settings,
+        }
+        if issubclass(selected_class, DocumentReviewExecutor):
+            kwargs["document_section_map"] = (
+                await DocumentReviewPreparationService(
+                    file_path,
+                    _present_document_names(document_presence),
+                    settings=settings,
+                ).prepare()
+            )
+        executor = selected_class(**kwargs)
+        raw_results = await executor.execute_raw()
+
+    coordinator = ReviewResultCoordinator(
+        file_path,
+        settings=executor.settings,
+    )
+    return await coordinator.finalize(
+        raw_results,
+        rule_count=len({item["rule_index"] for item in raw_results}),
+    )
+
+
+def _empty_review_result(reason: str) -> Dict[str, Any]:
+    return {
+        "rule_results": [],
+        "findings": [],
+        "review_results": [],
+        "result_processing_enabled": False,
+        "rule_count": 0,
+        "result_path": None,
+        "raw_result_path": None,
+        "skipped": True,
+        "reason": reason,
+    }
+
+
+def _disabled_executor_status(executor_type: ReviewExecutorType) -> Dict[str, Any]:
+    return {
+        "executor": EXECUTOR_REGISTRY[executor_type].__name__,
+        "implemented": False,
+        "skipped": True,
+        "reason": "disabled",
+    }
 
 
 async def run_review(
     file_path: str,
     rule_type: int,
-    runtime: ReviewRuntime,
+    *,
+    executor_class: ExecutorClass | None = None,
+    rule_set: RuleSet | None = None,
+    settings: ReviewSettings | None = None,
 ) -> Dict[str, Any]:
-    CURRENT_PDF_PATH.set(str(file_path))
-    CURRENT_RULE_INDEX.set(None)
-    node_token = CURRENT_NODE.set("run_review")
-    pdf_name = Path(file_path).stem
+    """按配置运行叶子审查器，共享案件事实与一次性文书映射。"""
 
-    try:
-        required_cache_files = [
-            Path("pdf_cache") / pdf_name / "image_list.json",
-            Path("dir_cache") / pdf_name / "dir_info.json",
-            Path("meta_cache") / pdf_name / "meta_info.json",
-        ]
-        missing_files = [
-            str(path) for path in required_cache_files if not path.exists()
-        ]
-        if missing_files:
-            exc = FileNotFoundError(f"预处理缓存缺失: {missing_files}")
-            details = _log_exception(
-                exc,
-                "run_review.precheck",
-                missing_files=missing_files,
-            )
-            _safe_write_error_report(pdf_name, details)
-            raise ReviewError(
-                ErrorCode.UNEXPECTED_ERROR,
-                f"[{details['error_id']}] {exc}",
-                details=details,
-            ) from exc
-
-        try:
-            rule_list, config = load_rule_list(
-                rule_type,
-                required_cache_files[1],
-            )
-            LOGGER.info(
-                "review started. rule_count=%s rule_type=%s rule_config=%s",
-                len(rule_list),
-                rule_type,
-                config,
-            )
-            final_state = await _build_review_graph(runtime).ainvoke(
-                {
-                    "pdf_path": str(file_path),
-                    "rule_list": rule_list,
-                    "rule_id": 0,
-                    "rule_results": [],
-                    "review_completed": False,
-                }
-            )
-        except ReviewError:
-            raise
-        except Exception as exc:
-            details = _details_from_exception(exc, "run_review.graph")
-            _safe_write_error_report(pdf_name, details)
-            raise ReviewError(
-                ErrorCode.UNEXPECTED_ERROR,
-                (
-                    f"[{details['error_id']}] {details['exception_type']}: "
-                    f"{details['message']}"
-                ),
-                details=details,
-            ) from exc
-
-        if final_state.get("error_code") is not None:
-            details = final_state.get("error_details")
-            if not details:
-                final_error = RuntimeError(
-                    final_state.get("error_message", "审查失败")
-                )
-                details = _details_from_exception(
-                    final_error,
-                    "run_review.final_state",
-                    error_code=final_state.get("error_code"),
-                )
-            _safe_write_error_report(pdf_name, details)
-            raise ReviewError(
-                final_state["error_code"],
-                final_state.get("error_message", "审查失败"),
-                details=details,
-            )
-
-        results = final_state.get("rule_results", [])
-        try:
-            atomic_write_json(
-                Path("results") / pdf_name / "review_results.json",
-                results,
-            )
-        except Exception as exc:
-            details = _details_from_exception(
-                exc,
-                "run_review.write_results",
-                result_count=len(results),
-            )
-            _safe_write_error_report(pdf_name, details)
-            raise ReviewError(
-                ErrorCode.UNEXPECTED_ERROR,
-                (
-                    f"[{details['error_id']}] 审查完成，但结果文件写入失败："
-                    f"{details['exception_type']}: {details['message']}"
-                ),
-                details=details,
-            ) from exc
-
-        LOGGER.info(
-            "review completed. rule_count=%s failed_rule_count=%s",
-            len(rule_list),
-            sum(1 for item in results if item.get("error")),
+    if executor_class is not None or rule_set is not None:
+        return await _run_custom_executor(
+            file_path,
+            rule_type,
+            executor_class,
+            rule_set,
+            settings,
         )
-        return {
-            "rule_results": results,
-            "rule_count": len(rule_list),
+
+    enabled_types = load_enabled_executor_types()
+    enabled_support_types = load_enabled_support_executor_types()
+    document_types = [
+        executor_type
+        for executor_type in enabled_types
+        if executor_type in DOCUMENT_EXECUTOR_TYPES
+    ]
+    if document_types:
+        rule_sets, document_presence = _build_document_rule_sets(
+            file_path,
+            rule_type,
+            document_types,
+        )
+    else:
+        rule_sets, document_presence = {}, {}
+
+    human_support_enabled = (
+        SupportExecutorType.HUMAN_SUPPORT in enabled_support_types
+    )
+    human_support_setup_error: str | None = None
+    if human_support_enabled:
+        try:
+            candidate_human_support_rules = (
+                _candidate_human_support_rules(rule_type)
+            )
+            support_document_names = human_support_document_names(
+                candidate_human_support_rules
+            )
+            document_presence = _ensure_human_support_document_presence(
+                file_path,
+                support_document_names,
+                document_presence,
+            )
+            human_support_rule_set = _build_human_support_rule_set(
+                candidate_human_support_rules,
+                document_presence,
+            )
+        except Exception as exc:
+            human_support_setup_error = (
+                f"{type(exc).__name__}: {exc}"
+            )
+            human_support_rule_set = RuleSet(rules=[])
+    else:
+        human_support_rule_set = RuleSet(rules=[])
+    human_support_executor_class = SUPPORT_EXECUTOR_REGISTRY[
+        SupportExecutorType.HUMAN_SUPPORT
+    ]
+    human_support_probe = human_support_executor_class(
+        file_path=file_path,
+        rule_set=human_support_rule_set,
+        document_section_map={},
+        settings=settings,
+    )
+    human_support_indexes = (
+        human_support_probe.executable_rule_indexes()
+        if human_support_enabled
+        else []
+    )
+
+    executable_indexes: Dict[ReviewExecutorType, List[int]] = {}
+    executable_rule_ids: set[int] = set()
+    for executor_type in document_types:
+        executor_class_for_type = EXECUTOR_REGISTRY[executor_type]
+        probe = executor_class_for_type(
+            file_path=file_path,
+            rule_set=rule_sets[executor_type],
+            document_section_map={},
+            settings=settings,
+        )
+        indexes = probe.executable_rule_indexes()
+        executable_indexes[executor_type] = indexes
+        executable_rule_ids.update(
+            rule_sets[executor_type].rules[index]["序号"]
+            for index in indexes
+        )
+
+    if ReviewExecutorType.CASE_LEVEL in enabled_types:
+        case_level_executor = EXECUTOR_REGISTRY[ReviewExecutorType.CASE_LEVEL](
+            file_path,
+            settings=settings,
+        )
+        case_level_results = await case_level_executor.execute_raw()
+        case_level_status = case_level_executor.status()
+    else:
+        case_level_results = []
+        case_level_status = _disabled_executor_status(
+            ReviewExecutorType.CASE_LEVEL
+        )
+
+    if (
+        not executable_rule_ids
+        and not case_level_results
+        and not human_support_indexes
+    ):
+        result = _empty_review_result("no_implemented_applicable_rules")
+        result.update(
+            {
+                "context_sensitive_preparation": {
+                    "preparation_completed": False,
+                    "rule_count": 0,
+                    "skipped": True,
+                    "reason": (
+                        "no_applicable_context_sensitive_rules"
+                        if ReviewExecutorType.CONTEXT_SENSITIVE in enabled_types
+                        else "disabled"
+                    ),
+                },
+                "context_free_rule_count": 0,
+                "context_sensitive_rule_count": 0,
+                "case_level_review": case_level_status,
+                "retrieval_enhancement": {
+                    "retrieval_enhancement_results": [],
+                    "rule_count": 0,
+                    "result_path": None,
+                    "skipped": True,
+                    "reason": (
+                        "retrieval_enhancement_setup_failed"
+                        if human_support_setup_error
+                        else (
+                            "no_applicable_retrieval_enhancement_rules"
+                            if human_support_enabled
+                            else "disabled"
+                        )
+                    ),
+                    **(
+                        {"error": human_support_setup_error}
+                        if human_support_setup_error
+                        else {}
+                    ),
+                },
+            }
+        )
+        return result
+
+    mapping_requirements = []
+    for executor_type, indexes in executable_indexes.items():
+        if not indexes:
+            continue
+        mapping_requirements.append(
+            _required_document_names(
+                executor_type,
+                rule_sets[executor_type].rules,
+            )
+        )
+    if human_support_indexes:
+        mapping_requirements.append(
+            human_support_document_names(
+                [
+                    human_support_rule_set.rules[index]
+                    for index in human_support_indexes
+                ]
+            )
+        )
+    mapping_names = [
+        name
+        for name in _ordered_union(mapping_requirements)
+        if document_presence.get(name) is True
+    ]
+    document_section_map = (
+        await DocumentReviewPreparationService(
+            file_path,
+            mapping_names,
+            settings=settings,
+        ).prepare()
+        if mapping_names
+        else {}
+    )
+
+    result_groups: List[List[Dict[str, Any]]] = []
+    context_sensitive_preparation = {
+        "preparation_completed": False,
+        "rule_count": 0,
+        "skipped": True,
+        "reason": (
+            "no_applicable_context_sensitive_rules"
+            if ReviewExecutorType.CONTEXT_SENSITIVE in enabled_types
+            else "disabled"
+        ),
+    }
+    for executor_type in document_types:
+        if not executable_indexes[executor_type]:
+            continue
+        executor = EXECUTOR_REGISTRY[executor_type](
+            file_path=file_path,
+            rule_set=rule_sets[executor_type],
+            document_section_map=document_section_map,
+            settings=settings,
+        )
+        result_groups.append(await executor.execute_raw())
+        if executor_type is ReviewExecutorType.CONTEXT_SENSITIVE:
+            context_sensitive_preparation = executor.last_preparation_result
+
+    if human_support_indexes:
+        try:
+            human_support_results = await human_support_executor_class(
+                file_path=file_path,
+                rule_set=human_support_rule_set,
+                document_section_map=document_section_map,
+                settings=settings,
+            ).execute()
+            human_support_status = HumanSupportResultCoordinator(
+                file_path,
+                settings=settings,
+            ).finalize(human_support_results)
+        except Exception as exc:
+            human_support_status = {
+                "retrieval_enhancement_results": [],
+                "rule_count": 0,
+                "result_path": None,
+                "skipped": False,
+                "reason": "retrieval_enhancement_execution_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+    else:
+        human_support_status = {
+            "retrieval_enhancement_results": [],
+            "rule_count": 0,
+            "result_path": None,
+            "skipped": True,
+            "reason": (
+                "retrieval_enhancement_setup_failed"
+                if human_support_setup_error
+                else (
+                    "no_applicable_retrieval_enhancement_rules"
+                    if human_support_enabled
+                    else "disabled"
+                )
+            ),
+            **(
+                {"error": human_support_setup_error}
+                if human_support_setup_error
+                else {}
+            ),
         }
-    finally:
-        CURRENT_NODE.reset(node_token)
+
+    result_groups.append(case_level_results)
+    raw_results = merge_rule_results(*result_groups)
+    if executable_rule_ids or case_level_results:
+        coordinator = ReviewResultCoordinator(file_path, settings=settings)
+        result = await coordinator.finalize(
+            raw_results,
+            rule_count=len(executable_rule_ids),
+        )
+    else:
+        result = _empty_review_result("no_implemented_applicable_rules")
+    result["context_sensitive_preparation"] = context_sensitive_preparation
+    result["context_free_rule_count"] = len(
+        {
+            rule_sets[ReviewExecutorType.CONTEXT_FREE].rules[index]["序号"]
+            for index in executable_indexes.get(
+                ReviewExecutorType.CONTEXT_FREE,
+                [],
+            )
+        }
+    )
+    result["context_sensitive_rule_count"] = len(
+        {
+            rule_sets[ReviewExecutorType.CONTEXT_SENSITIVE].rules[index]["序号"]
+            for index in executable_indexes.get(
+                ReviewExecutorType.CONTEXT_SENSITIVE,
+                [],
+            )
+        }
+    )
+    result["case_level_review"] = case_level_status
+    result["retrieval_enhancement"] = human_support_status
+    return result

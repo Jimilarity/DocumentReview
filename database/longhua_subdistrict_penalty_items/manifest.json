@@ -1,0 +1,16 @@
+{
+  "index_type": "sentence_transformers_cosine",
+  "model": "BAAI/bge-small-zh-v1.5",
+  "query_prefix": "为这个句子生成表示以用于检索相关文章：",
+  "item_count": 296,
+  "embedding_dimension": 512,
+  "source": "knowledge/深圳市龙华区街道承接区政府部门行政处罚事项/深圳市龙华区街道承接区政府部门行政处罚事项目录_结构化.json",
+  "source_sha256": "ad099f115ccc48b278cc0b38ab6e1c77acf17baf9f0c1a7bfa1107922de5a881",
+  "indexed_field": "item_name",
+  "retained_fields": [
+    "item_name",
+    "related_district_authority",
+    "implementation_scope",
+    "remark"
+  ]
+}

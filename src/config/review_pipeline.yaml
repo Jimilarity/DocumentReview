@@ -1,0 +1,9 @@
+# 按顺序启用最底层审查执行器。
+executors:
+  - context_free
+  - context_sensitive
+  - case_level
+
+# 检索增强与审查执行器并列运行，但不参与审查结果合并和后处理。
+support_executors:
+  - human_support

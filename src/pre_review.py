@@ -1,43 +1,162 @@
-#pre_preview.py
+import asyncio
 import copy
 import json
-import re
+import os
 import time
-from operator import add
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 import fitz
-from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 from tqdm.auto import tqdm
 
+from agents import PreReviewAgents
+from cache_paths import get_cache_paths
+from directory_info import normalize_directory_info
 from constants import ErrorCode
-from utils import combine_images, image_to_base64, atomic_write_json, extract_json
-from error import PreReviewError
-from error_handler import build_error_state
+from errors.exceptions import PreReviewError
+from errors.handler import (
+    CURRENT_PAGE_INDEX,
+    CURRENT_PDF_PATH,
+    build_error_state,
+)
+from utils import atomic_write_json
+from message_utils import build_vision_message
+
+
+class DocumentOcrResult(TypedDict):
+    document_content: str
+    image_path: str
+    image_index: int
+
 
 class PreReviewState(TypedDict, total=False):
     pdf_path: str
-    image_list: List[str]
-    meta_info: Dict[str, Any]
-    dir_info: List[Dict[str, Any]]
-    dir_ident_id: int
-    dir_completed: bool
-    section_id: int
-    
+    page_image_paths: list[str]
+    case_metadata: dict[str, Any]
+
+    ocr_page_index: int
+    ocr_max_concurrency: int
+    document_ocr_results: list[DocumentOcrResult]
+
+    document_catalog: list[dict[str, Any]]
+    catalog_page_index: int
+    catalog_scan_completed: bool
+    current_document_id: int
+
     error_code: Optional[int]
     error_message: Optional[str]
-    error_details: Optional[Dict[str, Any]]
+    error_details: Optional[dict[str, Any]]
 
 
-def _error(
+class PreReviewProgress:
+    """预审终端进度展示，不写入 LangGraph State。"""
+
+    STAGE_COUNT = 6
+
+    def __init__(self) -> None:
+        self._completed_stages: set[str] = set()
+        self._page_bar: Any = None
+        self._page_stage: Optional[str] = None
+        self._stage_bar = tqdm(
+            total=self.STAGE_COUNT,
+            desc="预审总进度",
+            unit="阶段",
+            position=0,
+        )
+
+    def update_pages(
+        self,
+        stage: str,
+        completed: int,
+        total: int,
+        *,
+        status: Optional[str] = None,
+    ) -> None:
+        total = max(1, total)
+        completed = min(max(0, completed), total)
+        if self._page_stage != stage:
+            self._close_page_bar()
+            self._page_stage = stage
+            self._page_bar = tqdm(
+                total=total,
+                desc=stage,
+                unit="页",
+                position=1,
+                leave=True,
+            )
+
+        if status:
+            self._page_bar.set_postfix_str(status)
+        delta = completed - self._page_bar.n
+        if delta > 0:
+            self._page_bar.update(delta)
+
+    def start_stage(self, stage: str) -> None:
+        if stage not in self._completed_stages:
+            self._stage_bar.set_postfix_str(f"正在：{stage}")
+            self._stage_bar.refresh()
+
+    def complete_stage(self, stage: str) -> None:
+        if stage in self._completed_stages:
+            return
+        if self._page_stage == stage:
+            self._close_page_bar()
+        self._completed_stages.add(stage)
+        self._stage_bar.set_postfix_str(stage)
+        self._stage_bar.update(1)
+
+    def close(self, *, success: bool) -> None:
+        self._close_page_bar()
+        self._stage_bar.set_postfix_str("完成" if success else "已停止")
+        self._stage_bar.close()
+
+    def _close_page_bar(self) -> None:
+        if self._page_bar is not None:
+            self._page_bar.close()
+        self._page_bar = None
+        self._page_stage = None
+
+
+def _get_page_ocr_text(
+    state: PreReviewState,
+    page_index: int,
+) -> str:
+    ocr_results = state["document_ocr_results"]
+    if not 0 <= page_index < len(ocr_results):
+        raise IndexError(
+            f"page_index={page_index} 没有对应的 OCR 结果"
+        )
+
+    ocr_result = ocr_results[page_index]
+    if ocr_result.get("image_index") != page_index:
+        raise ValueError(
+            "OCR 结果顺序与页面索引不一致："
+            f"期望 {page_index}，实际 {ocr_result.get('image_index')}"
+        )
+
+    page_text = ocr_result.get("document_content")
+    if page_text is None:
+        return "[OCR_EMPTY]"
+    if not isinstance(page_text, str):
+        raise TypeError(
+            f"第 {page_index} 页 OCR 结果应为字符串，"
+            f"实际为 {type(page_text).__name__}"
+        )
+    return page_text.strip() or "[OCR_EMPTY]"
+
+
+def _get_ocr_max_concurrency() -> int:
+    return int(os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "5"))
+
+
+def _build_error(
     code: ErrorCode,
     stage: str,
     exc: Exception | str,
-    state: Optional[PreReviewState] = None,
-    extra: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    state: PreReviewState | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return build_error_state(
         error_code=int(code),
         stage=stage,
@@ -47,386 +166,679 @@ def _error(
         extra=extra,
     )
 
-def _directory_not_found(state: PreReviewState) -> Dict[str, Any]:
-    exc = RuntimeError("未能在 PDF 中识别出目录")
 
-    return _error(
+def _directory_not_found(state: PreReviewState) -> dict[str, Any]:
+    return _build_error(
         ErrorCode.DIR_IDENTIFICATION_ERROR,
         "pre_review.directory_not_found",
-        exc,
+        RuntimeError("未能在 PDF 中识别出目录"),
         state,
-    )
-    
-def _section_not_completed(state: PreReviewState) -> Dict[str, Any]:
-    exc = RuntimeError(
-        f"已到达 PDF 末页，尚未定位目录项 {state['section_id']}"
     )
 
-    return _error(
+
+def _document_section_not_found(state: PreReviewState) -> dict[str, Any]:
+    document_id = state["current_document_id"]
+    return _build_error(
         ErrorCode.SECTION_IDENTIFICATION_ERROR,
-        "pre_review.section_not_completed",
-        exc,
+        "pre_review.document_section_not_found",
+        RuntimeError(f"已到达 PDF 末页，尚未定位目录项 {document_id}"),
         state,
         extra={
-            "page_index": state.get("dir_ident_id"),
-            "section_id": state.get("section_id"),
+            "page_index": state.get("catalog_page_index"),
+            "document_id": document_id,
         },
     )
 
 
-def _pdf_to_image(state: PreReviewState) -> Dict[str, Any]:
-    doc = None
+def _convert_pdf_to_page_images(state: PreReviewState) -> dict[str, Any]:
+    pdf_document = None
     try:
         dpi = 200
         pdf_path = Path(state["pdf_path"])
-        output_folder = Path("pdf_cache") / pdf_path.stem
-        output_folder.mkdir(parents=True, exist_ok=True)
+        cache_paths = get_cache_paths(pdf_path)
+        output_directory = cache_paths.page_directory
+        output_directory.mkdir(parents=True, exist_ok=True)
 
-        doc = fitz.open(pdf_path)
-        matrix = fitz.Matrix(dpi / 72, dpi / 72)
-        page_number_width = max(3, len(str(max(0, len(doc) - 1))))
-        image_list: List[str] = []
+        pdf_document = fitz.open(pdf_path)
+        render_matrix = fitz.Matrix(dpi / 72, dpi / 72)
+        page_number_width = max(
+            3,
+            len(str(max(0, len(pdf_document) - 1))),
+        )
+        page_image_paths: list[str] = []
 
-        for page_index in tqdm(range(len(doc)), desc="converting pdf to images..."):
-            page = doc.load_page(page_index)
-            pix = page.get_pixmap(matrix=matrix, colorspace=fitz.csRGB)
-            image_path = output_folder / f"page_{page_index:0{page_number_width}d}.jpeg"
-            pix.save(str(image_path))
-            image_list.append(str(image_path))
+        for page_index in tqdm(
+            range(len(pdf_document)),
+            desc="converting pdf to images...",
+            unit="页",
+            position=1,
+            leave=True,
+        ):
+            page = pdf_document.load_page(page_index)
+            pixmap = page.get_pixmap(
+                matrix=render_matrix,
+                colorspace=fitz.csRGB,
+            )
+            image_path = (
+                output_directory
+                / f"page_{page_index:0{page_number_width}d}.jpeg"
+            )
+            pixmap.save(str(image_path))
+            page_image_paths.append(str(image_path))
 
-        if not image_list:
+        if not page_image_paths:
             raise ValueError("PDF 中没有可处理的页面")
 
-        atomic_write_json(output_folder / "image_list.json", image_list)
-        return {"image_list": image_list}
+        atomic_write_json(
+            cache_paths.image_list,
+            page_image_paths,
+        )
+        return {"page_image_paths": page_image_paths}
     except Exception as exc:
-        return _error(
-        ErrorCode.PDF_TO_IMAGE_ERROR,
-        "pre_review.pdf_to_image",
-        exc,
-        state,
-    )
+        return _build_error(
+            ErrorCode.PDF_TO_IMAGE_ERROR,
+            "pre_review.convert_pdf_to_page_images",
+            exc,
+            state,
+        )
     finally:
-        if doc is not None:
-            doc.close()
+        if pdf_document is not None:
+            pdf_document.close()
 
 
-def _meta_data_extraction(state: PreReviewState, dr_instance: Any) -> Dict[str, Any]:
+def _extract_case_metadata(
+    state: PreReviewState,
+    agents: PreReviewAgents,
+) -> dict[str, Any]:
     try:
-        image_list = state["image_list"]
-        if not image_list:
-            raise ValueError("image_list 为空，无法提取卷宗元数据")
+        page_image_paths = state["page_image_paths"]
+        if not page_image_paths:
+            raise ValueError("page_image_paths 为空，无法提取案卷元信息")
 
-        cover_path = combine_images(
-            [image_list[0], image_list[-1]],
-            "cover.jpeg",
+        cover_image_path = page_image_paths[0]
+        prompt_text = agents.build_task_prompt(
+            "case_metadata_extractor"
         )
-        image_url = f"data:image/jpeg;base64,{image_to_base64(cover_path)}"
-        prompt_text = dr_instance.build_task_prompt("meta_data_extraction")
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": prompt_text},
-                {"type": "image_url", "image_url": {"url": image_url}},
-            ]
-        )
-        response = dr_instance.meta_agent.invoke({"messages": [message]})
-
-        if "structured_response" in response:
-            meta_info = response["structured_response"].model_dump(by_alias=True)
+        message = build_vision_message(prompt_text, cover_image_path)
+        parsed_metadata = agents.invoke_case_metadata(message)
+        if isinstance(parsed_metadata, dict):
+            metadata = parsed_metadata
         else:
-            meta_info = extract_json(response["messages"][-1].content)
+            metadata = parsed_metadata.model_dump(by_alias=True)
 
-        return {"meta_info": meta_info}
+        return {"case_metadata": metadata}
     except Exception as exc:
-        return _error(
-        ErrorCode.META_DATA_EXTRACTION_ERROR,
-        "pre_review.meta_data_extraction",
-        exc,
-        state,
-    )
+        return _build_error(
+            ErrorCode.META_DATA_EXTRACTION_ERROR,
+            "pre_review.extract_case_metadata",
+            exc,
+            state,
+        )
 
 
-def _dir_identification(state: PreReviewState, dr_instance: Any) -> Dict[str, Any]:
+def _save_case_metadata(
+    state: PreReviewState,
+) -> dict[str, Any]:
     try:
-        page_index = state["dir_ident_id"]
-        image_list = state["image_list"]
-        if page_index >= len(image_list):
-            raise IndexError("已到达 PDF 末页，但尚未完成目录识别")
-
-        prompt_text = dr_instance.build_task_prompt("dir_identification")
-        image_url = f"data:image/jpeg;base64,{image_to_base64(image_list[page_index])}"
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": prompt_text},
-                {"type": "image_url", "image_url": {"url": image_url}},
-            ]
-        )
-
-        start_time = time.time()
-        response = dr_instance.dir_agent.invoke({"messages": [message]})
-        print(f"目录识别响应时间: {time.time() - start_time:.4f} 秒")
-
-        if "structured_response" in response:
-            parsed = response["structured_response"]
-            dir_info = parsed.dir_info
-            is_dir = parsed.is_dir
-        else:
-            parsed = extract_json(response["messages"][-1].content)
-            dir_info = parsed["dir_info"]
-            is_dir = parsed["is_dir"]
-
-        existing_dir_info = state["dir_info"]
-        if not is_dir and existing_dir_info:
-            return {"dir_completed": True}
-
-        return {
-            "dir_info": existing_dir_info + dir_info,
-            "dir_ident_id": page_index + 1,
-        }
-    except Exception as exc:
-        return _error(
-        ErrorCode.DIR_IDENTIFICATION_ERROR,
-        "pre_review.dir_identification",
-        exc,
-        state,
-        extra={
-            "page_index": state.get("dir_ident_id"),
-        },
-    )
-
-
-def _section_identification(state: PreReviewState, dr_instance: Any) -> Dict[str, Any]:
-    try:
-        page_index = state["dir_ident_id"]
-        section_id = state["section_id"]
-        image_list = state["image_list"]
-        dir_info = state["dir_info"]
-
-        if not dir_info:
-            raise ValueError("目录信息为空，无法定位文书章节")
-        if page_index >= len(image_list):
-            raise IndexError(f"已到达 PDF 末页，尚未定位目录项 {section_id}")
-
-        if section_id == len(dir_info):
-            section_info = dir_info[section_id - 1]
-        else:
-            section_info = dir_info[section_id - 1 : section_id + 1]
-
-        prompt_text = dr_instance.build_task_prompt(
-            "section_identification",
-            section_info=json.dumps(section_info, ensure_ascii=False),
-        )
-
-        content: List[Dict[str, Any]] = [
-            {"type": "text", "text": prompt_text},
-            {"type": "text", "text": "以下为 picture1"},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{image_to_base64(image_list[page_index])}"
-                },
-            },
-        ]
-        if page_index + 1 < len(image_list):
-            content.extend(
-                [
-                    {"type": "text", "text": "以下为 picture2"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_to_base64(image_list[page_index + 1])}"
-                        },
-                    },
-                ]
-            )
-
-        response = dr_instance.section_agent.invoke(
-            {"messages": [HumanMessage(content=content)]}
-        )
-        if "structured_response" in response:
-            is_belong = response["structured_response"].is_belong
-        else:
-            is_belong = extract_json(response["messages"][-1].content)
-
-        new_dir_info = copy.deepcopy(dir_info)
-        current_section_id = section_id
-        picture_count = 0
-
-        for picture_count, (_, value) in enumerate(is_belong.items(), start=1):
-            value = int(value)
-            current_page = page_index + picture_count - 1
-            if current_page >= len(image_list):
-                break
-            if value == -1:
-                continue
-
-            relative_target_id = section_id + value - 1
-            absolute_target_id = value
-            if relative_target_id == current_section_id:
-                target_id = relative_target_id
-            elif 1 <= absolute_target_id <= len(dir_info):
-                target_id = absolute_target_id
-            else:
-                continue
-
-            target = new_dir_info[target_id - 1]
-            if target.get("section_page", -1) == -1:
-                target["section_page"] = current_page
-            if target_id >= current_section_id:
-                current_section_id = target_id + 1
-
-        next_page_index = min(
-            len(image_list), page_index + max(1, picture_count)
-        )
-
-        if next_page_index >= len(image_list) and current_section_id <= len(new_dir_info):
-            fallback_page = max(0, len(image_list) - 1)
-            for index in range(current_section_id - 1, len(new_dir_info)):
-                if new_dir_info[index].get("section_page", -1) == -1:
-                    new_dir_info[index]["section_page"] = fallback_page
-            current_section_id = len(new_dir_info) + 1
-
-        return {
-            "dir_info": new_dir_info,
-            "section_id": current_section_id,
-            "dir_ident_id": next_page_index,
-        }
-    except Exception as exc:
-        return _error(
-        ErrorCode.SECTION_IDENTIFICATION_ERROR,
-        "pre_review.section_identification",
-        exc,
-        state,
-        extra={
-            "page_index": state.get("dir_ident_id"),
-            "section_id": state.get("section_id"),
-        },
-    )
-
-
-def _save_pre_review_data(state: PreReviewState) -> Dict[str, Any]:
-    try:
-        pdf_name = Path(state["pdf_path"]).stem
+        cache_paths = get_cache_paths(state["pdf_path"])
         atomic_write_json(
-            Path("dir_cache") / pdf_name / "dir_info.json",
-            state["dir_info"],
-        )
-        atomic_write_json(
-            Path("meta_cache") / pdf_name / "meta_info.json",
-            state["meta_info"],
+            cache_paths.metadata,
+            state["case_metadata"],
         )
         return {}
     except Exception as exc:
-        return _error(
-        ErrorCode.UNEXPECTED_ERROR,
-        "pre_review.save_pre_review_data",
-        exc,
-        state,
-    )
+        return _build_error(
+            ErrorCode.META_DATA_EXTRACTION_ERROR,
+            "pre_review.save_case_metadata",
+            exc,
+            state,
+        )
 
 
-def _route_after_node(success_node: str):
+async def _extract_document_text(
+    state: PreReviewState,
+    agents: PreReviewAgents,
+) -> dict[str, Any]:
+    try:
+        page_image_paths = state["page_image_paths"]
+        start_page_index = state["ocr_page_index"]
+
+        if start_page_index >= len(page_image_paths):
+            raise IndexError("已到达图片列表末尾，无法继续进行 OCR")
+
+        max_concurrency = _get_ocr_max_concurrency()
+        end_page_index = min(
+            len(page_image_paths),
+            start_page_index + max_concurrency,
+        )
+
+        meta_info = json.dumps(
+            state["case_metadata"],
+            ensure_ascii=False,
+        )
+        prompt_text = agents.build_task_prompt(
+            "document_ocr",
+            meta_info=meta_info,
+        )
+        async def extract_one_page(
+            page_index: int,
+        ) -> DocumentOcrResult:
+            image_path = page_image_paths[page_index]
+            message = build_vision_message(prompt_text, image_path)
+            page_token = CURRENT_PAGE_INDEX.set(page_index)
+            try:
+                response = await agents.document_ocr_agent.ainvoke(
+                    {"messages": [message]}
+                )
+                messages = response.get("messages", [])
+                if not messages:
+                    raise RuntimeError("OCR Agent 返回结果缺少 messages")
+                content = messages[-1].content
+                if not isinstance(content, str):
+                    raise TypeError(
+                        "OCR Agent 返回内容应为字符串，"
+                        f"实际为 {type(content).__name__}"
+                    )
+                return {
+                    "document_content": content,
+                    "image_path": image_path,
+                    "image_index": page_index,
+                }
+            except Exception as exc:
+                raise RuntimeError(
+                    f"第 {page_index} 页 OCR 失败: {exc}"
+                ) from exc
+            finally:
+                CURRENT_PAGE_INDEX.reset(page_token)
+
+        batch_results = await asyncio.gather(
+            *(
+                extract_one_page(page_index)
+                for page_index in range(
+                    start_page_index,
+                    end_page_index,
+                )
+            )
+        )
+        return {
+            "ocr_page_index": end_page_index,
+            "ocr_max_concurrency": max_concurrency,
+            "document_ocr_results": [
+                *state["document_ocr_results"],
+                *batch_results,
+            ],
+        }
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.UNEXPECTED_ERROR,
+            "pre_review.extract_document_text",
+            exc,
+            state,
+            extra={
+                "start_page_index": state.get("ocr_page_index"),
+                "max_concurrency": _get_ocr_max_concurrency(),
+            },
+        )
+
+
+def _save_document_ocr_results(
+    state: PreReviewState,
+) -> dict[str, Any]:
+    try:
+        cache_paths = get_cache_paths(state["pdf_path"])
+        atomic_write_json(
+            cache_paths.ocr_results,
+            state["document_ocr_results"],
+        )
+        return {}
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.UNEXPECTED_ERROR,
+            "pre_review.save_document_ocr_results",
+            exc,
+            state,
+        )
+
+
+async def _classify_directory_page(
+    state: PreReviewState,
+    agents: PreReviewAgents,
+) -> dict[str, Any]:
+    try:
+        page_index = state["catalog_page_index"]
+        if page_index >= len(state["page_image_paths"]):
+            raise IndexError("已到达 PDF 末页，但尚未完成目录识别")
+
+        page_text = _get_page_ocr_text(state, page_index)
+        prompt_text = agents.build_task_prompt(
+            "directory_classifier",
+            page_index=page_index,
+            page_text=page_text,
+        )
+
+        start_time = time.time()
+        parsed_result = await agents.ainvoke_directory_classifier(
+            prompt_text=prompt_text,
+            page_index=page_index,
+        )
+        print(f"目录识别响应时间: {time.time() - start_time:.4f} 秒")
+
+        directory_items: list[dict[str, Any]] = []
+        if isinstance(parsed_result, dict):
+            is_directory = parsed_result["is_dir"]
+            for item in parsed_result["dir_info"]:
+                item_data = dict(item)
+                extra_fields = item_data.pop("extra_fields", {})
+                if isinstance(extra_fields, dict):
+                    item_data.update(extra_fields)
+                directory_items.append(item_data)
+        else:
+            is_directory = parsed_result.is_directory
+            for item in parsed_result.directory_items:
+                item_data = item.model_dump(exclude={"extra_fields"})
+                item_data.update(item.extra_fields)
+                directory_items.append(item_data)
+
+        directory_items = normalize_directory_info(directory_items)
+
+        existing_catalog = state["document_catalog"]
+        if not is_directory and existing_catalog:
+            return {"catalog_scan_completed": True}
+
+        return {
+            "document_catalog": existing_catalog + directory_items,
+            "catalog_page_index": page_index + 1,
+        }
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.DIR_IDENTIFICATION_ERROR,
+            "pre_review.classify_directory_page",
+            exc,
+            state,
+            extra={"page_index": state.get("catalog_page_index")},
+        )
+
+
+async def _locate_document_sections(
+    state: PreReviewState,
+    agents: PreReviewAgents,
+) -> dict[str, Any]:
+    try:
+        page_index = state["catalog_page_index"]
+        document_id = state["current_document_id"]
+        document_catalog = state["document_catalog"]
+
+        if not document_catalog:
+            raise ValueError("目录信息为空，无法定位文书章节")
+        if page_index >= len(state["page_image_paths"]):
+            raise IndexError(
+                f"已到达 PDF 末页，尚未定位目录项 {document_id}"
+            )
+
+        section_context = document_catalog[document_id - 1]
+
+        page_text = _get_page_ocr_text(state, page_index)
+        prompt_text = agents.build_task_prompt(
+            "section_classifier",
+            section_info=json.dumps(
+                section_context,
+                ensure_ascii=False,
+            ),
+            page_index=page_index,
+            page_text=page_text,
+        )
+        parsed_result = await agents.ainvoke_section_classifier(
+            prompt_text=prompt_text,
+            page_index=page_index,
+        )
+        if isinstance(parsed_result, dict):
+            is_belong = parsed_result["is_belong"]
+        else:
+            is_belong = parsed_result.is_belong
+
+        updated_catalog = copy.deepcopy(document_catalog)
+        next_document_id = document_id
+        if is_belong:
+            target_document = updated_catalog[document_id - 1]
+            if target_document.get("section_page", -1) == -1:
+                target_document["section_page"] = page_index
+            next_document_id = document_id + 1
+
+        next_page_index = page_index + 1
+        return {
+            "document_catalog": updated_catalog,
+            "current_document_id": next_document_id,
+            "catalog_page_index": next_page_index,
+        }
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.SECTION_IDENTIFICATION_ERROR,
+            "pre_review.locate_document_sections",
+            exc,
+            state,
+            extra={
+                "page_index": state.get("catalog_page_index"),
+                "document_id": state.get("current_document_id"),
+            },
+        )
+
+
+def _save_pre_review_results(state: PreReviewState) -> dict[str, Any]:
+    try:
+        cache_paths = get_cache_paths(state["pdf_path"])
+        atomic_write_json(
+            cache_paths.directory,
+            normalize_directory_info(state["document_catalog"]),
+        )
+        return {}
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.UNEXPECTED_ERROR,
+            "pre_review.save_pre_review_results",
+            exc,
+            state,
+        )
+
+
+def _route_to(success_node: str):
     def router(state: PreReviewState):
         if state.get("error_code") is not None:
-            return "error_node"
+            return "handle_error"
         return success_node
 
     return router
 
 
-def _route_dir_identification(state: PreReviewState):
+def _route_document_ocr(state: PreReviewState):
     if state.get("error_code") is not None:
-        return "error_node"
-    if state.get("dir_completed", False):
-        return "section_identification"
-    if state["dir_ident_id"] < len(state["image_list"]):
-        return "dir_identification"
+        return "handle_error"
+    if state["ocr_page_index"] < len(state["page_image_paths"]):
+        return "extract_document_text"
+    return "save_document_ocr_results"
+
+
+def _route_directory_scan(state: PreReviewState):
+    if state.get("error_code") is not None:
+        return "handle_error"
+    if state.get("catalog_scan_completed", False):
+        return "locate_document_sections"
+    if state["catalog_page_index"] < len(state["page_image_paths"]):
+        return "classify_directory_page"
     return "directory_not_found"
 
 
-
-
-def _route_section_identification(state: PreReviewState):
+def _route_section_location(state: PreReviewState):
     if state.get("error_code") is not None:
-        return "error_node"
-    if state["section_id"] > len(state["dir_info"]):
-        return "save_pre_review_data"
-    if state["dir_ident_id"] < len(state["image_list"]):
-        return "section_identification"
-    return "section_not_completed"
+        return "handle_error"
+    if state["current_document_id"] > len(state["document_catalog"]):
+        return "save_pre_review_results"
+    if state["catalog_page_index"] < len(state["page_image_paths"]):
+        return "locate_document_sections"
+    return "document_section_not_found"
 
 
-
-
-def _error_node(state: PreReviewState) -> Dict[str, Any]:
-    print(
-        f"PRE_REVIEW STOPPED, ERROR CODE: {state.get('error_code', ErrorCode.UNEXPECTED_ERROR)}"
-    )
+def _handle_error(state: PreReviewState) -> dict[str, Any]:
+    error_code = state.get("error_code", ErrorCode.UNEXPECTED_ERROR)
+    print(f"PRE_REVIEW STOPPED, ERROR CODE: {error_code}")
     print(state.get("error_message", ""))
     return {}
 
 
-def build_pre_review_graph(dr_instance: Any):
-    workflow = StateGraph(PreReviewState)
-    workflow.add_node("pdf_to_image", _pdf_to_image)
-    workflow.add_node(
-        "meta_data_extraction",
-        lambda state: _meta_data_extraction(state, dr_instance),
-    )
-    workflow.add_node(
-        "dir_identification",
-        lambda state: _dir_identification(state, dr_instance),
-    )
-    workflow.add_node(
-        "section_identification",
-        lambda state: _section_identification(state, dr_instance),
-    )
-    workflow.add_node("save_pre_review_data", _save_pre_review_data)
-    workflow.add_node("directory_not_found", _directory_not_found)
-    workflow.add_node("section_not_completed", _section_not_completed)
-    workflow.add_node("error_node", _error_node)
+def build_pre_review_graph(
+    agents: PreReviewAgents | None = None,
+    progress: PreReviewProgress | None = None,
+):
+    agents = agents or PreReviewAgents()
 
-    workflow.set_entry_point("pdf_to_image")
+    def convert_pdf_to_page_images_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("PDF 转图片")
+        result = _convert_pdf_to_page_images(state)
+        if progress and result.get("error_code") is None:
+            progress.complete_stage("PDF 转图片")
+        return result
+
+    def extract_case_metadata_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("案卷元数据")
+        result = _extract_case_metadata(state, agents)
+        return result
+
+    def save_case_metadata_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("案卷元数据")
+        result = _save_case_metadata(state)
+        if progress and result.get("error_code") is None:
+            progress.complete_stage("案卷元数据")
+        return result
+
+    async def extract_document_text_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("全文 OCR")
+            progress.update_pages(
+                "全文 OCR",
+                state["ocr_page_index"],
+                len(state["page_image_paths"]),
+                status=(
+                    f"从第 {state['ocr_page_index'] + 1} 页开始并发处理；"
+                    "并发上限 "
+                    f"{_get_ocr_max_concurrency()}"
+                ),
+            )
+        result = await _extract_document_text(state, agents)
+        if progress and result.get("error_code") is None:
+            progress.update_pages(
+                "全文 OCR",
+                result["ocr_page_index"],
+                len(state["page_image_paths"]),
+                status=(
+                    f"已完成 {result['ocr_page_index']} 页；"
+                    f"并发上限 {result['ocr_max_concurrency']}"
+                ),
+            )
+        return result
+
+    def save_document_ocr_results_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("全文 OCR")
+        result = _save_document_ocr_results(state)
+        if progress and result.get("error_code") is None:
+            progress.complete_stage("全文 OCR")
+        return result
+
+    async def classify_directory_page_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("目录识别")
+            progress.update_pages(
+                "目录识别",
+                state["catalog_page_index"],
+                len(state["page_image_paths"]),
+                status=f"正在扫描第 {state['catalog_page_index'] + 1} 页",
+            )
+        result = await _classify_directory_page(state, agents)
+        if progress and result.get("error_code") is None:
+            catalog_size = len(
+                result.get("document_catalog", state["document_catalog"])
+            )
+            progress.update_pages(
+                "目录识别",
+                state["catalog_page_index"] + 1,
+                len(state["page_image_paths"]),
+                status=f"已提取 {catalog_size} 项",
+            )
+            if result.get("catalog_scan_completed", False):
+                progress.complete_stage("目录识别")
+        return result
+
+    async def locate_document_sections_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("章节定位")
+            progress.update_pages(
+                "章节定位",
+                state["catalog_page_index"],
+                len(state["page_image_paths"]),
+                status=(
+                    f"正在定位第 {state['current_document_id']}/"
+                    f"{len(state['document_catalog'])} 项"
+                ),
+            )
+        result = await _locate_document_sections(state, agents)
+        if progress and result.get("error_code") is None:
+            document_count = len(state["document_catalog"])
+            located_count = min(
+                document_count,
+                result["current_document_id"] - 1,
+            )
+            progress.update_pages(
+                "章节定位",
+                result["catalog_page_index"],
+                len(state["page_image_paths"]),
+                status=f"已定位 {located_count}/{document_count} 项",
+            )
+            if result["current_document_id"] > document_count:
+                progress.complete_stage("章节定位")
+        return result
+
+    def save_pre_review_results_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        if progress:
+            progress.start_stage("保存预审结果")
+        result = _save_pre_review_results(state)
+        if progress and result.get("error_code") is None:
+            progress.complete_stage("保存预审结果")
+        return result
+
+    workflow = StateGraph(PreReviewState)
+
+    workflow.add_node(
+        "convert_pdf_to_page_images",
+        convert_pdf_to_page_images_node,
+    )
+    workflow.add_node(
+        "extract_case_metadata",
+        extract_case_metadata_node,
+    )
+    workflow.add_node(
+        "save_case_metadata",
+        save_case_metadata_node,
+    )
+    workflow.add_node(
+        "extract_document_text",
+        extract_document_text_node,
+    )
+    workflow.add_node(
+        "save_document_ocr_results",
+        save_document_ocr_results_node,
+    )
+    workflow.add_node(
+        "classify_directory_page",
+        classify_directory_page_node,
+    )
+    workflow.add_node(
+        "locate_document_sections",
+        locate_document_sections_node,
+    )
+    workflow.add_node(
+        "save_pre_review_results",
+        save_pre_review_results_node,
+    )
+    workflow.add_node("directory_not_found", _directory_not_found)
+    workflow.add_node(
+        "document_section_not_found",
+        _document_section_not_found,
+    )
+    workflow.add_node("handle_error", _handle_error)
+
+    workflow.set_entry_point("convert_pdf_to_page_images")
     workflow.add_conditional_edges(
-        "pdf_to_image",
-        _route_after_node("meta_data_extraction"),
+        "convert_pdf_to_page_images",
+        _route_to("extract_case_metadata"),
     )
     workflow.add_conditional_edges(
-        "meta_data_extraction",
-        _route_after_node("dir_identification"),
-    )
-    workflow.add_conditional_edges("dir_identification", _route_dir_identification)
-    workflow.add_conditional_edges(
-        "section_identification",
-        _route_section_identification,
+        "extract_case_metadata",
+        _route_to("save_case_metadata"),
     )
     workflow.add_conditional_edges(
-        "save_pre_review_data",
-        _route_after_node(END),
+        "save_case_metadata",
+        _route_to("extract_document_text"),
     )
-    workflow.add_edge("directory_not_found", "error_node")
-    workflow.add_edge("section_not_completed", "error_node")
-    workflow.add_edge("error_node", END)
+    workflow.add_conditional_edges(
+        "extract_document_text",
+        _route_document_ocr,
+    )
+    workflow.add_conditional_edges(
+        "save_document_ocr_results",
+        _route_to("classify_directory_page"),
+    )
+    workflow.add_conditional_edges(
+        "classify_directory_page",
+        _route_directory_scan,
+    )
+    workflow.add_conditional_edges(
+        "locate_document_sections",
+        _route_section_location,
+    )
+    workflow.add_conditional_edges(
+        "save_pre_review_results",
+        _route_to(END),
+    )
+    workflow.add_edge("directory_not_found", "handle_error")
+    workflow.add_edge("document_section_not_found", "handle_error")
+    workflow.add_edge("handle_error", END)
+
     return workflow.compile()
 
 
 async def run_pre_review(
     file_path: str,
-    dr_instance: Any,
-) -> Dict[str, Any]:
+    agents: PreReviewAgents | None = None,
+) -> PreReviewState:
     initial_state: PreReviewState = {
         "pdf_path": str(file_path),
-        "image_list": [],
-        "meta_info": {},
-        "dir_info": [],
-        "dir_ident_id": 0,
-        "dir_completed": False,
-        "section_id": 1,
+        "page_image_paths": [],
+        "case_metadata": {},
+        "ocr_page_index": 0,
+        "document_ocr_results": [],
+        "document_catalog": [],
+        "catalog_page_index": 0,
+        "catalog_scan_completed": False,
+        "current_document_id": 1,
     }
 
-    final_state = await build_pre_review_graph(dr_instance).ainvoke(
-        initial_state
-    )
+    progress = PreReviewProgress()
+    final_state: PreReviewState | None = None
+    pdf_path_token = CURRENT_PDF_PATH.set(str(file_path))
+    try:
+        final_state = await build_pre_review_graph(
+            agents,
+            progress,
+        ).ainvoke(initial_state)
+    finally:
+        CURRENT_PDF_PATH.reset(pdf_path_token)
+        progress.close(
+            success=(
+                final_state is not None
+                and final_state.get("error_code") is None
+            )
+        )
+
+    if final_state is None:
+        raise RuntimeError("预处理图未返回最终状态")
 
     if final_state.get("error_code") is not None:
         raise PreReviewError(

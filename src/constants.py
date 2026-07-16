@@ -1,5 +1,6 @@
-from enum import IntEnum, IntFlag
+from enum import Enum, IntEnum, IntFlag
 from pathlib import Path
+
 
 class ErrorCode(IntEnum):
     PDF_TO_IMAGE_ERROR = 401
@@ -7,11 +8,26 @@ class ErrorCode(IntEnum):
     DIR_IDENTIFICATION_ERROR = 403
     SECTION_IDENTIFICATION_ERROR = 404
     UNEXPECTED_ERROR = 500
-    
+
+
 class RuleCategory(IntFlag):
     LEGALITY = 0b10000000       # 合法性标准
     STANDARDIZATION = 0b01000000  # 规范性标准
-    SCORE_ADJUSTMENT = 0b00100000  # 加减分项
+    ADDITIONAL_REVIEW = 0b00100000  # 附加审查标准
+
+
+class ReviewExecutorType(str, Enum):
+    """可由审查流水线配置启用的叶子执行器。"""
+
+    CONTEXT_FREE = "context_free"
+    CONTEXT_SENSITIVE = "context_sensitive"
+    CASE_LEVEL = "case_level"
+
+
+class SupportExecutorType(str, Enum):
+    """不作审查结论、只为人工复核准备信息的流水线执行器。"""
+
+    HUMAN_SUPPORT = "human_support"
 
 
 class DocumentType(IntEnum):
@@ -20,7 +36,7 @@ class DocumentType(IntEnum):
     ADMIN_ENFORCEMENT = 0b11    # 行政强制
 
 
-class InspectionRuleType(IntFlag):
+class EnforcementRuleType(IntFlag):
     COERCIVE_MEASURE = 0b100           # 行政强制措施
     ADMIN_ENFORCEMENT = 0b010          # 行政机关强制执行
     COURT_ENFORCEMENT = 0b001          # 申请人民法院强制执行
@@ -35,39 +51,39 @@ CATEGORY_MASK = 0b11100000
 DOCUMENT_TYPE_MASK = 0b00011000
 SUBTYPE_MASK = 0b00000111
 
-RULES_PATH = Path(__file__).resolve().parents[1] / 'data' / 'all_rules.json'
+# File paths
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+RULES_PATH = PROJECT_ROOT / "data" / "all_rules.json"
+CACHE_ROOT = PROJECT_ROOT / "cache"
+RESULT_ROOT = PROJECT_ROOT / "results"
+REVIEW_RESULT_FILENAME = "review_results.json"
+RETRIEVAL_ENHANCEMENT_RESULT_FILENAME = (
+    "retrieval_enhancement_results.json"
+)
+REVIEW_ERROR_REPORT_FILENAME = "review_error.json"
+RAW_REVIEW_RESULT_FILENAME = "raw_review_results.json"
+REVIEW_RESULT_PROCESSING_FILENAME = "review_result_processing.json"
+STRUCTURED_FIELD_CACHE_FILENAME = "structured_fields.json"
+STRUCTURED_FIELD_CACHE_SCHEMA_VERSION = 6
+SECTION_FIELDS_PATH = PROJECT_ROOT / "src" / "config" / "section_fields.yaml"
+CONTEXT_SENSITIVE_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "config" / "context_sensitive.yaml"
+)
+CASE_LEVEL_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "config" / "case_level_review.yaml"
+)
+REVIEW_PIPELINE_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "config" / "review_pipeline.yaml"
+)
+DOCUMENT_MAPPING_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "config" / "document_mapping.yaml"
+)
 
-STANDARDIZATION_PENALTY_DOCS = {
-    '立案审批表',
-    '现场检查',
-    '（勘验）笔录',
-    '调查询问笔录',
-    '证据',
-    '先行登记保存证据通知书(决定书)',
-    '查封（扣押）决定书',
-    '责令改正违法行为决定书(通知书)',
-    '行政处罚事先（听证）',
-    '告知书',
-    '行政处罚听证通知书',
-    '听证笔录',
-    '听证报告',
-    '重大行政处罚决定法制审核意见书',
-    '行政机关负责人集体讨论笔录',
-    '行政处罚决定书',
-    '结案表',
+SENSITIVE_KEYS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "password",
+    "secret",
+    "token",
 }
-
-OPTIONAL_STANDARDIZATION_PENALTY_ORDINARY = [
-    '现场检查（勘验）笔录',
-    '调查询问笔录',
-    '先行登记保存证据通知书（决定书）',
-    '查封（扣押）决定书',
-    '责令改正违法行为通知书',
-    '行政处罚听证通知书',
-    '听证笔录',
-    '听证报告',
-    '重大行政处罚决定法制审核意见书',
-    '行政机关负责人集体讨论笔录',
-    '行政处罚决定书',
-]
-
