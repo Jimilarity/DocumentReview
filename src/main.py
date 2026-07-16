@@ -5,14 +5,23 @@ import time
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional
+from dotenv import load_dotenv
+env_path = Path(__file__).resolve().parents[1] / '.env'
+load_dotenv(env_path)
 
-from constants import ErrorCode
+from constants import ErrorCode, RESULT_ROOT
+from cache_paths import get_cache_paths, get_result_directory
 from post_review import run_post_review
 from pre_review import run_pre_review
-from review import run_review, build_review_runtime
-from rule_utils import validate_rule_type, parse_rule_type_value
-from error import DocumentReviewError, PreReviewError, ReviewError, PostReviewError
-from error_handler import capture_error, write_error_report
+from review import run_review
+from rules.rule_type import parse_rule_type_value, validate_rule_type
+from errors.exceptions import (
+    DocumentReviewError,
+    PostReviewError,
+    PreReviewError,
+    ReviewError,
+)
+from errors.handler import capture_error, write_error_report
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 
@@ -54,32 +63,18 @@ async def main(
         args = build_parser().parse_args()
         file_path = args.file_path
         rule_type = args.rule_type
-        
+
     validate_rule_type(rule_type)
-    
+
     try:
         pdf_path = validate_input(file_path)
-        
-        def get_pre_review_cache_files(pdf_path: Path) -> Dict[str, Path]:
-            pdf_name = pdf_path.stem
 
-            return {
-                "image_list": Path("pdf_cache") / pdf_name / "image_list.json",
-                "dir_info": Path("dir_cache") / pdf_name / "dir_info.json",
-                "meta_info": Path("meta_cache") / pdf_name / "meta_info.json",
-            }
-
-        def pre_review_cache_exists(pdf_path: Path) -> bool:
-            cache_files = get_pre_review_cache_files(pdf_path)
-            return all(path.is_file() for path in cache_files.values())
-        
         start_time = time.time()
 
-        runtime = await build_review_runtime(str(pdf_path))
+        cache_paths = get_cache_paths(pdf_path)
+        cache_files = cache_paths.pre_review_files
 
-        cache_files = get_pre_review_cache_files(pdf_path)
-
-        if pre_review_cache_exists(pdf_path):
+        if all(path.is_file() for path in cache_files.values()):
             print("预处理缓存完整，跳过预处理步骤")
             pre_review_result = {
                 "skipped": True,
@@ -103,13 +98,19 @@ async def main(
 
             pre_review_result = await run_pre_review(
                 str(pdf_path),
-                runtime.dr_instance,
             )
 
         review_result = await run_review(
             str(pdf_path),
             rule_type,
-            runtime,
+        )
+        context_sensitive_preparation = review_result.get(
+            "context_sensitive_preparation",
+            {
+                "preparation_completed": False,
+                "skipped": True,
+                "reason": "no_applicable_context_sensitive_rules",
+            },
         )
 
         post_review_result = await run_post_review(
@@ -119,24 +120,39 @@ async def main(
 
         elapsed_time = time.time() - start_time
         print(f"全部流程执行时间: {elapsed_time:.4f} 秒")
-        print(f"审查结果数量: {len(review_result['rule_results'])}")
+        print(f"审查结果数量: {len(review_result['review_results'])}")
+        retrieval_result = (
+            review_result.get("retrieval_enhancement") or {}
+        )
+        print(
+            "检索增强规则数量: "
+            f"{retrieval_result.get('rule_count', 0)}"
+        )
+        if retrieval_result.get("result_path"):
+            print(
+                "检索增强结果: "
+                f"{retrieval_result['result_path']}"
+            )
 
         return {
             "success": True,
             "pre_review": pre_review_result,
+            "context_sensitive_preparation": (
+                context_sensitive_preparation
+            ),
             "review": review_result,
             "post_review": post_review_result,
             "elapsed_seconds": elapsed_time,
         }
     except DocumentReviewError as exc:
         details = exc.details
-    
+
         print(
             f"FLOW STOPPED, ERROR CODE: {exc.error_code}, "
             f"ERROR ID: {details.get('error_id', 'unknown')}"
         )
         print(str(exc))
-    
+
         return {
             "success": False,
             "error_code": exc.error_code,
@@ -153,10 +169,11 @@ async def main(
             },
         )
 
-        pdf_name = Path(file_path).stem if file_path else "unknown"
-
         write_error_report(
-            Path("results") / pdf_name / "flow_error.json",
+            get_result_directory(
+                file_path or "unknown",
+                result_root=RESULT_ROOT,
+            ) / "flow_error.json",
             details,
         )
 

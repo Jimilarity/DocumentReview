@@ -1,113 +1,45 @@
-meta_data_extraction:
-  description: >
-    提取上传图片中的行政处罚案卷封面元数据。
+case_metadata_extractor:
+  description: |
+    从当前案卷封面图片中提取供后续 OCR 和法制审查使用的案件元数据。
+    只能依据图片中实际可见内容，不得推测、补写或从其他页面补充。
 
-    【提取范围】
+    【必须输出】
+    以下字段必须全部输出；未填写、被遮挡或无法可靠辨认时填 null：
+    - 执法单位
+    - 案卷名称
+    - 案号
+    - 案由
+    - 当事人
+    - 立案日期
+    - 结案日期
+    - 处理结果
+    - 案件承办人员及执法证件号
+    - 额外字段
 
-    仅提取当前案卷封面上实际出现并且能够辨认的内容。
-    不得从案卷目录、行政处罚决定书、立案审批表或其他页面补充信息。
-    不得根据案件名称、案号格式、执法机关所在地或一般经验推测缺失内容。
+    承办人员和执法证号能够可靠对应时，解析为由“执法人”和“执法证号”组成的对象数组；
+    无法可靠拆分时保留原始字符串，不得猜测或丢失原值。
 
-    【固定输出字段】
-
-    以下字段必须全部出现在输出JSON中：
-
-    1. 执法单位
-       指封面载明的行政执法机关、立卷单位、全宗名称或者办案机关。
-       “行政执法主体”“执法机关”“立卷单位”等同类标签可以归入此字段。
-
-    2. 案卷名称
-       指封面载明的案件名称、案卷题名或具体案件标题。
-       不要仅将“行政处罚案卷”这一通用文书标题识别为案卷名称；
-       只有封面没有具体案件标题，且明确将其作为案卷名称填写时才提取。
-
-    3. 案号
-       指封面明确标注为“案号”“案件编号”等的编号。
-       不得将归档号、档号或者其他文书文号误识别为案号。
-       如果封面未写字段标签，但编号的位置和版式能够明确证明其为本案案号，
-       可以提取；无法确定时返回null。
-
-    4. 案由
-       提取封面“案由”字段对应的原文。
-       不得根据案卷名称自行概括或者生成案由。
-
-    5. 当事人
-       提取封面载明的自然人姓名、法人名称或者其他组织名称。
-       多个当事人按照封面原有顺序合并为一个字符串，不得遗漏“等”字。
-
-    6. 立案日期
-       仅在封面明确载明立案日期时提取。
-
-    7. 结案日期
-       仅在封面明确载明结案日期时提取。
-
-    8. 处理结果
-       仅提取封面明确载明的处罚结果、案件处理结果或者结案结果。
-
-    9. 保管期限
-       提取“永久”“长期”“30年”“10年”等封面原文。
-
-    10. 卷号
-        提取“第几卷”“共几卷第几卷”等信息。
-
-    11. 页数
-        提取封面记载的本卷总页数，仅返回字段值，不自行添加单位。
-
-    12. 归档号
-        仅提取明确标注为“归档号”的内容。
-
-    13. 档号
-        仅提取明确标注为“档号”的内容，不得与案号、归档号混淆。
-
-    14. 立卷人
-        提取封面明确载明的立卷人员姓名。
-
-    15. 审核人
-        提取封面明确载明的审核人员姓名。
+    【一律不得提取】
+    下列信息只用于档案保管、编目或装盒，与后续审查无关。即使图片中清晰存在，
+    也不得作为固定字段或额外字段输出：
+    - 归档人、归档人员、归档日期
+    - 立卷人、立卷日期
+    - 保管期限、保管年限、保存期限
+    - 归档号、档号、全宗号、目录号、卷号、卷别、分类号
+    - 密级、年度、盒号、件号
+    - 页数、总页数、页码数
+    - 光盘数量、本卷附光盘数量及其他载体数量
+    - 与上述字段含义相同、仅用于档案管理的其他命名变体
 
     【额外字段】
+    只保留确实有助于案件 OCR 或法制审查的信息，例如承办机构、案件来源、
+    违法行为发生地、程序状态、听证情况、法律依据等。不要为了完整转录封面而
+    收集无关字段，也不要重复输出已经归入固定字段的信息。
 
-    除上述固定字段外，封面中其他具有明确“字段名称—字段值”关系的信息，
-    全部放入“额外字段”对象中，例如：
+    日期完整且明确时可统一为 YYYY-MM-DD；存在歧义时保留原文。
+    最终只输出一个 JSON 对象，不要输出解释、Markdown 或分析过程。
 
-    - 案件来源
-    - 收案日期
-    - 归档日期
-    - 承办机构
-    - 承办人
-    - 卷别
-    - 正卷或副卷
-    - 分类号
-    - 密级
-    - 年度
-    - 全宗号
-    - 目录号
-    - 本卷附光盘数量
-    - 封面中其他实际存在的字段
-
-    “额外字段”中的键应尽量保留封面原始字段名称，不要擅自改写。
-    已经归入固定字段的信息不得在“额外字段”中重复输出。
-    装饰性标题、说明性文字、制表机关名称和无法确定对应值的零散文字，
-    不作为额外字段。
-
-    【提取规则】
-
-    1. 所有内容必须来自封面实际可见文字，不得推测、补写或纠正事实。
-    2. 固定字段无内容、未填写、被遮挡或无法可靠辨认时，返回null。
-    3. 不得使用空字符串、斜杠、“无”“未知”“未提供”等代替null，
-       除非这些文字就是封面实际填写的字段值。
-    4. 保留名称、案号和案由中的原始文字、数字及符号。
-    5. 可以删除字段值首尾多余空格，并将因排版产生的无意义换行合并。
-    6. 不得擅自修改错别字、案号格式、机构名称或者日期。
-    7. 日期完整且格式明确时，统一输出为YYYY-MM-DD；
-       日期不完整或存在歧义时，保留封面原文。
-    8. 印章中的文字只有在清晰可辨且属于字段值时才可以提取。
-    9. 同一额外字段在封面出现多个不同值时，将值输出为字符串数组。
-    10. 只输出一个合法JSON对象，不得输出分析过程、解释、Markdown标记或代码块。
-
-  expected_output: >
-    严格按照以下结构返回合法JSON：
-
+  expected_output: |
     {
       "执法单位": null,
       "案卷名称": null,
@@ -117,105 +49,352 @@ meta_data_extraction:
       "立案日期": null,
       "结案日期": null,
       "处理结果": null,
-      "保管期限": null,
-      "卷号": null,
-      "页数": null,
-      "归档号": null,
-      "档号": null,
-      "立卷人": null,
-      "审核人": null,
+      "案件承办人员及执法证件号": [
+        {
+          "执法人": "张三",
+          "执法证号": "19020996101"
+        }
+      ],
       "额外字段": {}
     }
 
-    输出要求：
+    固定字段不得缺少；除承办人员字段外，其余固定字段只能是字符串或 null。
+    承办人员字段可以是对象数组、无法拆分的原始字符串或 null；“额外字段”必须是 JSON 对象。
 
-    - 固定字段一个都不能缺少。
-    - 固定字段的值只能是字符串或null。
-    - “额外字段”必须是JSON对象。
-    - 额外字段的值只能是字符串、字符串数组或null。
-    - 未发现额外字段时返回空对象{}。
-    - 不得增加“提取说明”“置信度”“原始文本”等未定义的顶层字段。
-    - 不要使用```json或其他Markdown格式包裹结果。
+document_ocr:
+  description: |
+    识别当前随消息提供的案卷图片。
 
-  agent: meta_data_extractor
-  output_file: results/meta_data_extraction.json
+    <case_metadata>
+    {meta_info}
+    </case_metadata>
+  expected_output: >
+    按照系统消息定义的 OCR 协议，只返回图片识别文本。
+
+
 
 #鲁棒性，针对一些错误的处理？
-dir_identification:
-  description: >
-    判断上传的文档是否是文书档案的目录，如果是目录，提取其中的结构化信息。
-    识别任务：图片如上，流程如下：
-    1.首先判断给定图片是否是文书档案目录，如果不是目录，直接返回{{"is_dir": false, "dir_info": []}}，
-    2.如果是目录，提取目录中的结构化信息，识别图片顶部的表头，将每一列的名称作为列表内字典对象中的 Key，例如，如果表头是“顺序号”，“题名”，”页号“，“备注”，则字典格式应为 {{"顺序号": "...", "题名": "...", “页号”:, "备注": "..."}}。 返回{{"is_dir": true, "dir_info": [dict]}}，其中dir_info包含目录的结构化信息。
-    3.页号统一置为-1 。
+directory_classifier:
+  description: |
+    当前页面的 image_list 索引为 {page_index}。
+    以下是该页已经解析好的 OCR 文本：
+    <page_ocr>
+    {page_text}
+    </page_ocr>
+
+    判断该页是否为文书档案目录。本次最多调用一次 inspect_page_image，调用时
+    page_index 必须为 {page_index}。
+
+    如果不是目录，返回{{"is_dir": false, "dir_info": []}}。
+    如果是目录，识别表头和目录项并返回{{"is_dir": true, "dir_info": [dict]}}。
+    每个目录项必须包含 section_id、section_name、section_page、extra_fields；
+    section_page 统一置为 -1。备注等其他目录列放入 extra_fields 对象。
   expected_output: >
-    dir_info中的字典对象应当至少包含以下Key：顺序号，题名，页号，顺序号和题名和页号是必填项，如果目录中没有顺序号，应当自己依序设置顺序号。顺序号，题名，页号统一命名为“section_id”，“section_name”，“section_page”。
-    严格将结果以json形式返回，不要添加任何其他内容，不需要诸如'''json{content} ``` 包裹，样例：
-    样例1：
-    {"is_dir": True, "dir_info": [
-      {"section_id": "1", "section_name": "行政处罚决定书", "section_page": -1, "备注": "原件"},
-      {"section_id": "2", "section_name": "送达回执", "section_page": -1, "备注": "复印件"}
+    只输出一个可由 json.loads 直接解析的 JSON 对象，不要添加解释或 Markdown。
+    is_dir 必须是布尔值，dir_info 必须是列表。目录项的顺序号、题名、页号
+    统一命名为 section_id、section_name、section_page；没有顺序号时依次补齐。
+    示例1：
+    {"is_dir": true, "dir_info": [
+      {"section_id": 1, "section_name": "行政处罚决定书", "section_page": -1, "extra_fields": {"备注": "原件"}},
+      {"section_id": 2, "section_name": "送达回执", "section_page": -1, "extra_fields": {"备注": "复印件"}}
     ]}
-    样例2：
+    示例2：
     {"is_dir": false, "dir_info": []}
-  agent: dir_identifier
-  output_file: results/dir_identification.json
 
-section_identification:
-  description: >
-    以下是卷宗目录的相邻一行或两行信息：\n{section_info}\n ，根据给定的目录信息（section1,section2）和一张(picture1)或两张(picture1,picture2)文书图片，判断给定的图片是否属于对应文书，识别流程如下：
-    1.判断第一张图片picture1是否属于提供的section（section1或者section2）
-    2.判断第二张图片picture2是否属于提供的section（section1或者section2）
-    图片编号依顺序给出
+
+section_classifier:
+  description: |
+    以下是卷宗目录中当前待定位的唯一一个文书目录项：
+    {section_info}
+
+    当前只判断一页，image_list 索引为 {page_index}。该页已经解析好的 OCR 文本如下：
+    <page_ocr>
+    {page_text}
+    </page_ocr>
+
+    判断当前页是否属于该目录项。本次最多调用一次 inspect_page_image，调用时
+    page_index 必须为 {page_index}。
   expected_output: >
-    对于所有给定的图片结果以字典"{"picture1": section_id1(int), "picture2": section_id2(int)}"返回，section_id代表图片归属的文书，如果是section1则为1，如果是section2则为2，如果图片不属于任何其中某个文书则为-1，
-    注意：section_id的值一定是int类型的数字且返回的字典键值需要严格按照顺序，"picture1"需要在"picture2"之前，
-    严格将结果以json格式返回，不要添加任何其他内容，不需要诸如'''json{content} ``` 包裹，
-    输出示例：
-    {"picture1": 1, "picture2": 1}
-    {"picture1": 2, "picture2": -1}
-    {"picture1": -1}
-    {"picture1": 2}
-  agent: section_identifier
-  output_file: results/section_identifier.json
+    只输出一个合法 JSON 对象：{"is_belong": boolean}。
+    当前页属于给定目录项时返回 {"is_belong": true}，否则返回
+    {"is_belong": false}。不要输出解释、Markdown 或其他内容。
 
-document_review:
-  description: >
-    根据给定的审查标准，审查事项以及给定的分数区间和评分项类型，对行政卷宗进行规范性审查，最后需要给出：意见内容和评分。
-    以下是以下是案卷元信息:\n{meta_info}\n文书的目录信息\n{dir_info}\n，以下是审查要求\n{rule_info}\n。
-    审查流程如下：
-    1.对于每一个审查事项，根据给定的审查标准，制定审查计划 plan。
-    2.根据目录信息，使用多模态模型工具call_vlm执行任务，函数接收参数(section_id: int, task: str) -> str, 其中section_id是一个数字，对应目录中文书的编号，task是一个字符串，表示需要执行的审查任务，函数会根据section_id对应文书图片，将图片和任务描述task调用多模态模型。task是你需要获取的信息，根据你的plan逐步构建task。最后返回结果字符串。
-    3.工具调用边界：优先只查看审查要求中“对应文书”明确关联的文书；如果目录中没有完全同名文书，可以查看最接近的同类文书。不要为了旁证反复核查无关文书；已经能判断时必须停止调用工具。
-    4.如果对应文书不存在、材料不足、图片不可读或工具调用失败，直接给出低置信度结论，不要继续反复调用工具。
-    5.如果由于工具调用失败或者材料不足等其他意外无法得出审查意见，以及对于该规则审查置信度较低，返回的confidence值需要置为"low"，表示本次审查置信度低，需要人工复查。
-    6.综合所有审查事项综合审查意见，并给出评分，分值以及评分项类型已在审查要求给出。
-    7.最终答案只能输出一个 JSON 对象；禁止输出审查过程、标题、Markdown、```json 代码块、解释文字或任何 JSON 之外的内容。
+
+document_presence_check:
+  description: |
+    判断案卷目录中是否包含每个指定的规范文书类型。
+
+    <document_names>
+    {document_names}
+    </document_names>
+
+    <directory>
+    {dir_info}
+    </directory>
+
+    <compatible_document_type_groups>
+    {compatible_document_type_groups}
+    </compatible_document_type_groups>
+
+    上面列出的是允许同一 section 重复命中的文书类型组。组内类型可以理解为
+    同一份证据可能同时具备的多个标签。
+
+    判断规则：
+    1. 不要求目录名称与规范文书类型标签完全一致，应根据文书语义判断。
+    2. 全角或半角括号及括号内文字表示可选项或可替代表述，不是目录标题
+       必须包含的文字。例如，规范类型“行政处罚决定书”可以匹配目录中的
+       “行政处罚决定书”“当场行政处罚决定书”和“（当场）行政处罚决定书”。
+    3. 规范类型“结案审批表”可以匹配目录中的“结案表”和“结案（审批）表”。
+    4. 规范类型“现场检查（勘验）笔录”可以匹配目录中的“现场检查笔录”或
+       “勘验笔录”。
+    5. 规范类型“先行登记保存证据通知书（决定书）”可以匹配目录中的
+       “先行登记保存证据决定书”。
+    6. 规范类型“责令改正通知书”可以匹配目录中的“责令改正违法行为通知书”
+       或“责令改正违法行为决定书”。
+    7. “送达回执”和“送达回证”视为同类文书。
+    8. 空格、换行和轻微表述差异不影响判断。
+    9. 通常一个 section 只能证明一种文书存在。只有上面同组的类型可以同时为
+       true；符合几个组内标签，就把几个类型都判断为存在。组外类型仍然互斥。
+       例如，section 10 是执法人员拍摄的现场照片，那么“行政执法人员采集制作
+       的证据材料”和“计算机数据、录音、录像、图片等证据材料”都应为 true，
+       不能因为二者使用同一个 section 就把其中一个判断为 false。
+    10. 每个输入文书类型都必须在结果中出现，键名必须与输入完全一致。
   expected_output: >
-    如果是工具调用，按照工具说明即可，如果是最终结果：
-    严格将结果以json格式返回，不要添加任何其他内容，结果格式如下：{"comment": List[Dict], "score": float, "confidence": Literal["high", "medium", "low"]}，comment是一个字典列表，每个字典包含以下Key："section_id":List[int]（一个数字列表对应目录中文书的编号），"content"（审查意见内容），score为卷宗的审查分值，confidence为本次审查置信度，如果该文书在此规则审查下没有问题，则comment字段应为空列表。
-    最终输出必须是可被 json.loads 直接解析的原始 JSON。不要使用 Markdown 代码块，不要在 JSON 前后添加任何说明文字。
-    输出示例：
-    {"comment": [{"section_id": [1], "content": "法律法规摘要中《行政处罚法》第七十三条引用的最后一款“行政机关批准延期、分期缴纳罚款的，申请人民法院强制执行的期限，自暂缓或者分期缴纳罚款期限结束之日起计算。”为第七十二条的内容，建议修改"},
-    {"section_id": [5, 8], "content": "整改复查意见书针对的系8167号责令整改指令书，与责令整改指令书不一致，建议修改"}
-    ], "score": 100.0, "confidence": "high"}
-  agent: document_reviewer
-  output_file: results/document_review.json
+    最终结果只能包含 document_presence 字段。document_presence 是一个对象，
+    必须逐项包含输入的全部规范文书类型且不得包含其他键，值只能是 true 或
+    false。不要输出解释、Markdown 或其他字段。示例：
+    {"document_presence": {"现场检查（勘验）笔录": true, "调查询问笔录": false}}
 
-result_write:
-  description: >
-    根据给定的模型的最后一次对话，提取出json格式的真正的审查结果，如果没有预期格式的内容片段，直接返回空字典
-    模型的最后一次回复如下:\n{last_response}
-  expected_output: >  
-    严格将结果以json格式返回，不要添加任何其他内容，结果格式如下：{"comment": List[Dict], "score": float, "confidence": Literal["high", "medium", "low"]}，comment是一个字典列表，每个字典包含以下Key："section_id":List[int]（一个数字列表对应目录中文书的编号），"content"（审查意见内容），score为卷宗的审查分值，confidence为本次审查置信度，如果该文书在此规则审查下没有问题，则comment字段应为空列表。
-    在解析json的时候注意字符串：外部统一使用双引号，内部统一使用单引号，严禁引号嵌套字符串导致解析错误
-    错误示例：
-    "content": "送达回执中"受送达人"一栏..." 错误，多引号嵌套
-    正确示例：
-    "content": "送达回执中'受送达人'一栏..." 正确，外部双引号内部单引号
-    最终输出必须是可被 json.loads 直接解析的原始 JSON。不要使用 Markdown 代码块，不要在 JSON 前后添加任何说明文字。
+
+document_section_mapping:
+  description: |
+    将以下规则文书类型映射到案卷目录中的 section_id。
+
+    <case_metadata>
+    {meta_info}
+    </case_metadata>
+
+    <document_names>
+    {document_names}
+    </document_names>
+
+    <directory>
+    {dir_info}
+    </directory>
+
+    <compatible_document_type_groups>
+    {compatible_document_type_groups}
+    </compatible_document_type_groups>
+
+    上面列出的是允许重复映射的文书类型组。组内类型可以理解为能够同时贴在
+    同一 section 上的多个标签。
+
+    案卷元信息用于确定本案行政相对人、当事人、法定代表人、执法单位和
+    执法人员等主体。规则文书类型涉及特定主体或材料来源时，必须结合案卷
+    元信息判断，不得把其他自然人的身份证明、工作证明或执法人员资格材料
+    映射为行政相对人的身份证明或主体资格证明材料。
+
+    通常一个 section 只能映射到一个最准确的文书类型。只有上面同组的类型可以
+    重复使用同一个 section_id：一份证据符合几个组内标签，就映射给几个类型。
+    组外类型仍然互斥，也不得仅因名称相近而重复分配。
+
+    例如，section 10 是执法人员拍摄的现场照片，它可以同时映射为：
+    - “行政执法人员采集制作的证据材料”：section_ids 为 [10]
+    - “计算机数据、录音、录像、图片等证据材料”：section_ids 为 [10]
+    这不是冲突。反之，如果某个 section 只符合其中一个标签，就只能映射给该类型。
+
+    规则文书类型标签中的全角或半角括号及括号内文字表示可选项或可替代表述，
+    不是实际目录标题必须包含的文字。目录标题只包含括号外的核心名称时仍应映射。
+    例如，“行政处罚决定书”必须映射到“（当场）行政处罚决定书”；
+    规范类型“结案审批表”可以映射到目录中的“结案表”或“结案（审批）表”。
+    规范类型“责令改正通知书”可以映射到目录中的“责令改正违法行为通知书”
+    或“责令改正违法行为决定书”。
+    “送达回执”和“送达回证”视为同类文书，规范类型“送达回证”可以映射到
+    目录中的“送达回执”。
+
+    每个输入类型都已经过存在性判断，因此均应得到非空映射；不得因为组内其他
+    类型已经使用某个 section，或因名称近似，而让适用类型返回空 section_ids。
+  expected_output: >
+    最终结果只能包含 mappings 字段。mappings 是对象数组，每个对象只能包含
+    document_name 和 section_ids；document_name 必须与输入的规则文书类型完全一致，
+    section_ids 必须是一个或多个正整数；同组类型可以重复使用相同 section_id，
+    其他不同文书类型的 section_ids 不得重叠。
+    不要输出解释、Markdown 或其他字段。
+    同组类型共享 section 的示例：
+    {"mappings": [{"document_name": "行政执法人员采集制作的证据材料", "section_ids": [10]}, {"document_name": "计算机数据、录音、录像、图片等证据材料", "section_ids": [10]}]}
+
+
+context_free_document_review:
+  description: |
+    依据当前审查规则，对当前 section 执行一次上下文无关审查，并给出审查结果。
+
+    <case_metadata>
+    {meta_info}
+    </case_metadata>
+
+    <review_rule>
+    {rule_info}
+    </review_rule>
+
+    <review_rule> 是本次调用唯一的审查范围。只审查当前规则明确要求的事项，
+    每个问题都必须能够直接说明违反了当前规则中的哪项要求。
+
+    当前规则匹配的文书类型（实际标题可因地区或文书模板不同而有所差异）：{document_name}
+    当前 section_id：{section_id}
+
+    <section_ocr>
+    {ocr_text}
+    </section_ocr>
+
+    section_ocr 开头的 directory_metadata 来自案卷目录。其中 section_name 是
+    目录中的文书名称，只用于定位和辨识当前 section，不是从文书页面 OCR 得到的
+    实际标题，不得据此认定页面标题、正文存在错字、空格或格式问题。只有各个
+    page_index 下的内容才是当前文书的页面 OCR。
+
+    必须按 page_index 顺序检查当前 section 的全部页面，将它们视为同一份连续
+    文书。正文内容在页尾未结束时，必须继续检查后续页面；页码、页眉页脚以
+    及固定签名区域可能插入正文之间，不代表正文已经终止。只有检查完整个 section 
+    后仍找不到续文，才能认定内容截断、缺失或描述不完整。
+
+    如果必须核对原图，可以调用一次
+    inspect_current_section_images(task: str)。task 必须明确描述需要核实、识别
+    或说明的具体元素。调用工具后等待工具结果，再提交最终审查结果。
+  expected_output: |
+    如果需要调用工具，按照工具参数要求发起调用并等待工具结果；工具调用不是最终输出。
+    最终结果必须是一个可由 json.loads 直接解析的 JSON 对象，且只能包含 issues。
+    issues 只包含实际发现的问题；没有发现问题时必须为空数组。
+    issues 中的每个对象只能包含以下字段：
+    - section_ids：只能是仅包含当前 section_id 的数组。
+    - content：具体、可复核的问题说明；必须说明其违反当前规则的具体要求，
+      且只描述有问题的部分及必要的修改建议。
+    不得在 issues 中输出符合要求、已经载明、审查通过或未发现问题的事项，
+    不得输出分析过程、解释、标题、Markdown 或代码块。
     输出示例：
-    {"comment": [{"section_id": [1], "content": "法律法规摘要中《行政处罚法》第七十三条引用的最后一款“行政机关批准延期、分期缴纳罚款的，申请人民法院强制执行的期限，自暂缓或者分期缴纳罚款期限结束之日起计算。”为第七十二条的内容，建议修改"},
-    {"section_id": [5, 8], "content": "整改复查意见书针对的系8167号责令整改指令书，与责令整改指令书不一致，建议修改"}
-    ], "score": 100.0, "confidence": "high"}
-  agent: result_writer
+    {"issues": [{"section_ids": [1], "content": "法律条文引用有误，建议核对后修改。"}]}
+
+
+section_field_extraction:
+  description: |
+    从当前单个文书 section 中提取指定字段。
+
+    文书类型：{document_type}
+
+    <field_specs>
+    {field_specs}
+    </field_specs>
+
+    <section_ocr>
+    {ocr_text}
+    </section_ocr>
+
+    field_specs 中每一项的 field 都必须原样出现在 fields 中。只能依据当前 OCR 提取；
+    未载明、未填写或无法可靠辨认时返回 null。不得根据常识修正原文，不得执行
+    审查，也不得省略值为 null 的字段。
+  expected_output: |
+    只能输出一个包含 fields 的 JSON 对象。fields 的键必须与 field_specs 中的
+    field 完全一致，
+    不得增加或缺少字段。示例：
+    {"fields": {"执法主体名称": "某某局", "立案日期": null}}
+
+
+delivery_receipt_extraction:
+  description: |
+    判断当前送达回证 OCR 中实际存在的送达事件数量，并提取每个事件的指定字段。
+
+    <field_specs>
+    {field_specs}
+    </field_specs>
+
+    <section_ocr>
+    {ocr_text}
+    </section_ocr>
+
+    通常一份送达回证 section 只有一个送达事件，应默认作为一个完整事件提取。
+    只有 OCR 中明确存在多份被送达文书或多组相互独立的送达记录时，才按被送达
+    文书拆成多个事件。多个签名、多个送达人、多个日期字段或多行文字本身，不代表
+    存在多个事件；同一被送达文书的内容不得拆开。明确存在多份被送达文书时也不得
+    合并。event_text 应忠实保留当前事件对应的 OCR 原文片段，并包含足以识别被
+    送达文书的上下文。field_specs 中每一项的 field 都必须在每个事件的 fields
+    中返回；找不到时返回 null。当前 OCR 确实没有可识别送达记录时，events 可以
+    为空数组。
+  expected_output: |
+    只能输出一个包含 events 的 JSON 对象。每个记录只能包含 source_order、
+    event_text 和 fields。示例：
+    {"events": [{"source_order": 1, "event_text": "行政处罚决定书……",
+    "fields": {"送达日期": "2025-03-01"}}]}
+
+
+delivery_receipt_mapping:
+  description: |
+    为当前单个送达记录寻找其意图送达的案卷文书。
+
+    <case_metadata>
+    {meta_info}
+    </case_metadata>
+
+    当前送达回证 section_id：{receipt_section_id}
+    当前送达记录 event_id：{event_id}
+
+    <directory>
+    {dir_info}
+    </directory>
+
+    <delivery_record_ocr>
+    {event_text}
+    </delivery_record_ocr>
+
+    目录顺序是经验线索：送达回证通常紧随其所送达的一份或多份文书之后。应结合目
+    录结构和送达记录语义判断其意图送达的文书。文号、当事人和日期是否一致属于后
+    续审查事项，不能作为排除候选的硬条件。只能返回目录中真实存在且不是任何送达
+    回证的 section_id；存在多个可能文书时应结合送达记录语义和目录邻近关系选择
+    最可能的一项。只有检查完整目录后仍不存在可对应文书时才返回 null。
+  expected_output: |
+    只能输出一个 JSON 对象，并且只能包含 related_section_id。成功时返回正整数，
+    找不到对应文书时返回 null。示例：
+    {"related_section_id": 12}
+
+
+consistency_review:
+  description: |
+    对当前上下文相关审查事项的全部结构化字段来源执行一次一致性判断。
+
+    审查事项：{review_item}
+
+    <field_sources>
+    {sources}
+    </field_sources>
+
+    配置方保证以上所有字段都要求彼此相等，即使字段名称不同也不得拆组。这里的
+    “相等”是值的等价判定，而不是字符串逐字相同：例如规范简称与全称、同一主体
+    在不同文书中的角色称谓、等价格式的日期或数值、1+2i 与 2i+1 等等，均应结合
+    值类型和表达含义判断。1/3 与有限小数等精度表达应说明近似关系和判断依据。
+    主体、日期、数额、行为、文号或其他实质值不同则必须判定不一致。不得推测输入
+    之外的事实，也不得把无法可靠判断的情况直接写成一致。
+  expected_output: |
+    只能输出一个 JSON 对象，并且只能包含 consistent 和 reason。
+    consistent 必须是布尔值；reason 必须简洁说明判断依据，尤其应明确指出实质差异。
+    示例：
+    {"consistent": false, "reason": "两份文书记载的执法主体不是同一机构。"}
+
+
+review_result_processing:
+  description: |
+    对以下逐规则审查产生的候选问题进行统一整理。
+
+    <candidates>
+    {candidates}
+    </candidates>
+
+    完成以下工作：
+    1. 将描述同一事实缺陷的候选合并为一个 finding；
+    2. 删除没有形成最终问题结论、包含自相矛盾分析或最终认定无问题的候选；
+    3. 将保留的问题改写为简洁、确定、可复核的表述；
+    4. 每个保留的 finding 必须列出构成该问题的全部 source_candidate_ids；
+    5. 一条候选同时包含多个独立问题时，可以拆分为多个 findings，此时同一个
+       candidate_id 可以出现在这些不同的 findings 中。
+  expected_output: |
+    必须通过结构化输出工具提交一个 JSON 对象，且只能包含 findings。
+
+    findings 中每个对象只能包含 source_candidate_ids 和 content。
+    不得生成 finding_id、rule_indexes 或 section_ids，这些字段由代码统一补充。
+    不得输出解释、分析过程、Markdown 或代码块。

@@ -24,5 +24,11 @@ env/
 .codex-backup/
 
 
+#pictures
+*.jpg
 
-
+# Retrieval models, download caches, and offline build checkpoints
+database/model_cache/
+database/longhua_subdistrict_penalty_items/model/
+database/shenzhen_city_management_discretion/items/
+database/shenzhen_city_management_discretion/manifest.json

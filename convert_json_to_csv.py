@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-CSV_FIELDS = ["rule_index", "score", "confidence", "comment"]
+CSV_FIELDS = ["rule_index", "comment"]
 
 
 def convert_json_to_csv(input_path: Path, output_path: Path) -> None:
@@ -44,8 +44,6 @@ def convert_json_to_csv(input_path: Path, output_path: Path) -> None:
                 writer.writerow(
                     {
                         "rule_index": item.get("rule_index"),
-                        "score": item.get("score"),
-                        "confidence": item.get("confidence"),
                         "comment": content.strip(),
                     }
                 )

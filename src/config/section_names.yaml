@@ -1,0 +1,21 @@
+eng2chs:
+  Case_Filing_Approval_Form: 立案审批表
+  On_Site_Inspection_Record: 现场检查（勘验）笔录
+  Inquiry_Record: 询问笔录
+  Order_To_Correct: 责令改正通知书
+  Penalty_Decision: 行政处罚决定书
+  On_The_Spot_Penalty_Decision: 行政处罚决定书
+  Service_Receipt: 送达回证
+  Case_Closure_Approval_Form: 结案审批表
+
+chs2eng:
+  立案审批表: Case_Filing_Approval_Form
+  现场检查（勘验）笔录: On_Site_Inspection_Record
+  询问笔录: Inquiry_Record
+  责令改正通知书: Order_To_Correct
+  行政处罚决定书: Penalty_Decision
+  当场行政处罚决定书: Penalty_Decision
+  （当场）行政处罚决定书: Penalty_Decision
+  送达回证: Service_Receipt
+  送达回执: Service_Receipt
+  结案审批表: Case_Closure_Approval_Form
