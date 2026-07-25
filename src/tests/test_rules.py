@@ -46,8 +46,8 @@ class RuleFilteringTest(unittest.TestCase):
             "上下文无关审查事项",
             "上下文相关审查事项",
             "备注",
+            "检索增强",
         }
-        optional_top_level_keys = {"检索增强"}
         context_item_keys = {
             "任务",
             "字段",
@@ -61,11 +61,7 @@ class RuleFilteringTest(unittest.TestCase):
         )
         for rule in self.all_rule_items():
             self.assertTrue(required_top_level_keys.issubset(rule))
-            self.assertTrue(
-                set(rule).issubset(
-                    required_top_level_keys | optional_top_level_keys
-                )
-            )
+            self.assertEqual(set(rule), required_top_level_keys)
             self.assertNotIn("executor", rule)
             self.assertIsInstance(rule["上下文无关审查事项"], dict)
             self.assertIsInstance(rule["上下文相关审查事项"], list)
@@ -93,15 +89,14 @@ class RuleFilteringTest(unittest.TestCase):
             for item in rule["上下文相关审查事项"]:
                 self.assertEqual(set(item), context_item_keys)
                 self.assertIsInstance(item["字段"], dict)
-            if "检索增强" in rule:
-                retrieval_modules = rule["检索增强"]
-                self.assertIsInstance(retrieval_modules, list)
-                self.assertTrue(
-                    all(
-                        isinstance(name, str) and name.strip()
-                        for name in retrieval_modules
-                    )
+            retrieval_modules = rule["检索增强"]
+            self.assertIsInstance(retrieval_modules, list)
+            self.assertTrue(
+                all(
+                    isinstance(name, str) and name.strip()
+                    for name in retrieval_modules
                 )
+            )
 
     def test_configured_consistency_tasks_use_one_current_task_name(self) -> None:
         configured_tasks = {
