@@ -32,3 +32,17 @@ database/model_cache/
 database/longhua_subdistrict_penalty_items/model/
 database/shenzhen_city_management_discretion/items/
 database/shenzhen_city_management_discretion/manifest.json
+
+# Local datasets and generated review artifacts
+/evaluation_dataset/
+/cache/*
+!/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/
+/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/*
+!/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/\[*\]深南招商综行罚字第1101号.json
+*.[pP][dD][fF]
+*.[cC][sS][vV]
+
+/generate_rule_113_report.ps1
+/test.py
+/（已脱敏）市容[2022]深龙华福城综行城罚字第0015号_扫描版.pdf
+/（已脱敏）应急2022-11王宗家_扫描版.pdf

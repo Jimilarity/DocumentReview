@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .filtering import _select_rules
+from .normalization import load_rule_aliases, normalize_rules
 from .rule_type import decode_rule_type
 from utils import read_json
 
@@ -23,6 +24,7 @@ RuleFilter = Callable[
 class RuleSetBuilder:
     def __init__(self, candidate_rules: Dict[str, Any]) -> None:
         self.candidate_rules = candidate_rules
+        self.rule_aliases = load_rule_aliases()
         self.rules: List[Dict[str, Any]] = []
         self.config: Dict[str, Any] = {}
 
@@ -54,7 +56,7 @@ class RuleSetBuilder:
                 self.candidate_rules.get("附加项", {}).get("通用", [])
             )
 
-        return selected_rules
+        return normalize_rules(selected_rules, self.rule_aliases)
 
     def for_rule_type(self, rule_type: int) -> "RuleSetBuilder":
         """只按业务规则类型选取候选规则，不掺入执行器信息。"""

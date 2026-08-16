@@ -49,5 +49,13 @@ class CaseMetadataExtractionTest(unittest.TestCase):
             {"执法人": "袁鹏龙", "执法证号": "19020996204"},
         )
 
+    def test_case_facts_agent_is_configured_for_retrieval(self) -> None:
+        tasks = load_yaml(SRC_ROOT / "config" / "tasks.yaml")
+        agents = load_yaml(SRC_ROOT / "config" / "agents.yaml")
+
+        self.assertIn("case_facts_extractor", tasks)
+        self.assertIn("案情", tasks["case_facts_extractor"]["expected_output"])
+        self.assertIn("case_facts_extractor_agent", agents)
+
 if __name__ == "__main__":
     unittest.main()

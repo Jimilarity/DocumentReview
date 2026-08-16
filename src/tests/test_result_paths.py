@@ -57,6 +57,10 @@ class ResultPathTest(unittest.TestCase):
             "raw_review_results.json",
         )
         self.assertEqual(
+            paths.scored_raw_review_results.name,
+            "raw_review_results_scored.json",
+        )
+        self.assertEqual(
             paths.review_result_processing.name,
             "review_result_processing.json",
         )

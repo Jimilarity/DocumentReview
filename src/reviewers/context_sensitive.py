@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import RunnableConfig
 
 from agents import ContextSensitiveReviewAgents
+from external_knowledge import KnowledgeContext, KnowledgeItem, KnowledgeService
 from constants import STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
 from review_config import (
     ContextSensitiveSettings,
@@ -122,6 +123,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         self,
         *args: Any,
         context_settings: ContextSensitiveSettings | None = None,
+        knowledge_service: KnowledgeService | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -130,6 +132,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         )
         self.structured_field_cache: StructuredFieldCache | None = None
         self.last_preparation_result: Dict[str, Any] | None = None
+        self.knowledge_service = knowledge_service or KnowledgeService(
+            logger=self.logger
+        )
 
     def get_local_tools(self) -> List[Any]:
         return []
@@ -202,7 +207,21 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         document_type: str,
         field_names: Iterable[str],
     ) -> Dict[str, Dict[str, Any]]:
-        document_specs = self.context_settings["field_specs"][document_type]
+        field_specs = self.context_settings["field_specs"]
+        if document_type not in field_specs:
+            raise ValueError(
+                f"文书类型“{document_type}”未在 section_fields.yaml 中配置"
+            )
+        document_specs = field_specs[document_type]
+        missing_fields = [
+            field_name
+            for field_name in field_names
+            if field_name not in document_specs
+        ]
+        if missing_fields:
+            raise ValueError(
+                f"文书类型“{document_type}”缺少字段配置: {missing_fields}"
+            )
         return {
             field_name: document_specs[field_name]
             for field_name in field_names
@@ -297,7 +316,15 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                         if field_name not in target:
                             target.append(field_name)
 
+        context = getattr(self, "context", None)
+        structured_input = (
+            getattr(context, "meta_info", {}).get("source_type")
+            == "structured_json"
+        )
+        configured_document_types = self.context_settings["field_specs"]
         for document_type, field_names in plan.items():
+            if structured_input and document_type not in configured_document_types:
+                continue
             self._specs_for_fields(
                 document_type,
                 field_names,
@@ -445,16 +472,6 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 event["related_section_id"] = TECHNICAL_MAPPING_FAILURE
             changed = True
 
-        occupied_section_ids = cache.assigned_service_section_ids(
-            excluding_receipt_section_id=section_id
-        )
-        occupied_section_ids.update(
-            event["related_section_id"]
-            for event in events
-            if isinstance(event.get("related_section_id"), int)
-            and not isinstance(event.get("related_section_id"), bool)
-            and event["related_section_id"] > 0
-        )
         technical_failures = []
         for event in events:
             stored_relation_key = cache.delivery_event_storage_key(event)
@@ -463,16 +480,8 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     section_id,
                     event,
                 )
-                if (
-                    isinstance(related_section_id, int)
-                    and related_section_id > 0
-                    and related_section_id in occupied_section_ids
-                ):
-                    related_section_id = TECHNICAL_MAPPING_FAILURE
                 event["related_section_id"] = related_section_id
                 changed = True
-                if isinstance(related_section_id, int) and related_section_id > 0:
-                    occupied_section_ids.add(related_section_id)
 
             missing_fields = [
                 field_name
@@ -672,6 +681,17 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             and self.executable_item_indexes(rule)
         ]
 
+    def executable_contextual_legality_rule_indexes(self) -> List[int]:
+        return [
+            index
+            for index, rule in enumerate(self.rules)
+            if any(
+                item.get("任务") == "不予处罚合法性审查"
+                and any(item["字段"].values())
+                for item in rule["上下文相关审查事项"]
+            )
+        ]
+
     def executable_item_indexes(
         self,
         rule: Dict[str, Any],
@@ -689,7 +709,8 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             for rule in self.rules
             for item in rule["上下文相关审查事项"]
             if item.get("任务")
-            and item.get("任务") != CONSISTENCY_TASK
+            and item.get("任务")
+            not in {CONSISTENCY_TASK, "不予处罚合法性审查"}
         ]
         if unsupported:
             raise NotImplementedError(
@@ -698,7 +719,20 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
     def executable_rule_indexes(self) -> List[int]:
         self.validate_supported_context_tasks()
-        return self.executable_consistency_rule_indexes()
+        return [
+            *self.executable_consistency_rule_indexes(),
+            *self.executable_contextual_legality_rule_indexes(),
+        ]
+
+    @staticmethod
+    def _knowledge_function_names(context_item: Dict[str, Any]) -> List[str]:
+        configured = context_item.get("外部知识", [])
+        if not isinstance(configured, list) or any(
+            not isinstance(name, str) or not name.strip()
+            for name in configured
+        ):
+            raise TypeError("上下文相关外部知识必须是非空名称数组")
+        return list(dict.fromkeys(name.strip() for name in configured))
 
     @staticmethod
     def _validate_field_items(
@@ -839,6 +873,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         self,
         context_item: Dict[str, Any],
         sources: List[ConsistencySource],
+        knowledge_items: List[KnowledgeItem],
     ) -> Any:
         compact_sources = [
             {
@@ -862,6 +897,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 ensure_ascii=False,
                 separators=(",", ":"),
             ),
+            external_knowledge=json.dumps(
+                [item.content for item in knowledge_items],
+                ensure_ascii=False,
+            ),
         )
         return await asyncio.wait_for(
             self.require_context_sensitive_agents().ainvoke_consistency_review(
@@ -869,6 +908,33 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 self.settings.agent_recursion_limit,
             ),
             timeout=self.settings.task_timeout_seconds,
+        )
+
+    async def collect_external_knowledge(
+        self,
+        rule: Dict[str, Any],
+        context_item: Dict[str, Any],
+        sources: List[ConsistencySource],
+    ) -> List[KnowledgeItem]:
+        """为任一上下文相关审查项汇总声明的外部知识。"""
+
+        context = self.require_document_context()
+        field_values = {
+            source.field_name: source.value
+            for source in sources
+            if source.value is not None
+        }
+        return await self.knowledge_service.collect(
+            self._knowledge_function_names(context_item),
+            KnowledgeContext(
+                metadata={**context.meta_info, **field_values},
+                dir_info=context.dir_info,
+                rule=rule,
+                review_item=context_item,
+                document_name="",
+                section_id=0,
+                section_ocr="",
+            ),
         )
 
     async def run_consistency_item(
@@ -882,6 +948,11 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             rule,
             context_item_index,
         )
+        knowledge_items = await self.collect_external_knowledge(
+            rule,
+            context_item,
+            sources,
+        )
         issues = required_field_issues(sources)
         if task_name != CONSISTENCY_TASK:
             raise ValueError(f"不支持的上下文相关审查任务: {task_name}")
@@ -892,6 +963,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             judgement = await self._consistency_judgement(
                 context_item,
                 comparable,
+                knowledge_items,
             )
             if not judgement.consistent:
                 issues.append(
@@ -909,6 +981,46 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
         return {"issues": issues}
 
+    async def run_contextual_legality_item(
+        self,
+        rule: Dict[str, Any],
+        context_item_index: int,
+    ) -> Dict[str, Any]:
+        context_item = rule["上下文相关审查事项"][context_item_index]
+        sources = await self.collect_consistency_sources(
+            rule,
+            context_item_index,
+        )
+        knowledge_items = await self.collect_external_knowledge(
+            rule,
+            context_item,
+            sources,
+        )
+        compact_sources = [
+            {
+                "document_type": source.document_type,
+                "section_id": source.section_id,
+                "field": source.field_name,
+                "value": source.value,
+            }
+            for source in sources
+        ]
+        prompt = self.require_context_sensitive_agents().build_task_prompt(
+            "contextual_legality_review",
+            review_item=json.dumps(context_item, ensure_ascii=False),
+            sources=json.dumps(compact_sources, ensure_ascii=False),
+            external_knowledge=json.dumps(
+                [item.content for item in knowledge_items],
+                ensure_ascii=False,
+            ),
+        )
+        agents = self.require_context_sensitive_agents()
+        result = await agents.ainvoke_contextual_legality_review(
+            prompt,
+            self.settings.agent_recursion_limit,
+        )
+        return {"issues": [issue.model_dump() for issue in result.issues]}
+
     async def run_one_consistency_rule(self, index: int) -> Dict[str, Any]:
         rule = self.rules[index]
         rule_token = CURRENT_RULE_INDEX.set(
@@ -919,6 +1031,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             item_results = await asyncio.gather(
                 *(
                     self.run_consistency_item(rule, item_index)
+                    if rule["上下文相关审查事项"][item_index]["任务"]
+                    == CONSISTENCY_TASK
+                    else self.run_contextual_legality_item(rule, item_index)
                     for item_index in configured_item_indexes
                 )
             )
@@ -927,7 +1042,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             return self.build_rule_error_result(
                 index,
                 exc,
-                stage="context_sensitive.consistency",
+                stage="context_sensitive.review",
             )
         finally:
             CURRENT_RULE_INDEX.reset(rule_token)
@@ -941,7 +1056,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         if not cache.preparation_completed:
             raise RuntimeError("上下文相关准备尚未完成，不能开始正式审查")
 
-        indexes = self.executable_consistency_rule_indexes()
+        indexes = self.executable_rule_indexes()
         semaphore = asyncio.Semaphore(
             max(1, self.settings.model_max_concurrency)
         )

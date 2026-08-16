@@ -2,6 +2,7 @@ import asyncio
 import copy
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Optional, TypedDict
@@ -11,6 +12,7 @@ from langgraph.graph import END, StateGraph
 from tqdm.auto import tqdm
 
 from agents import PreReviewAgents
+from agent_trace import trace_event
 from cache_paths import get_cache_paths
 from directory_info import normalize_directory_info
 from constants import ErrorCode
@@ -22,6 +24,56 @@ from errors.handler import (
 )
 from utils import atomic_write_json
 from message_utils import build_vision_message
+
+
+_OCR_DIV_PATTERN = re.compile(
+    r'<div\b(?P<attributes>[^>]*)>(?P<content>.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+_OCR_TAG_PATTERN = re.compile(r'<[^>]+>')
+_OCR_TYPE_PATTERN = re.compile(
+    r'\btype=["\'](?P<type>[^"\']+)["\']',
+    re.IGNORECASE,
+)
+_OCR_SUBSTANTIVE_THRESHOLD = 80
+
+
+def _ocr_substantive_character_count(content: str) -> int:
+    """计算 OCR 中非印章、非页码的可读内容长度。"""
+
+    fragments: list[str] = []
+    cursor = 0
+    for match in _OCR_DIV_PATTERN.finditer(content):
+        fragments.append(content[cursor:match.start()])
+        cursor = match.end()
+        type_match = _OCR_TYPE_PATTERN.search(match.group("attributes"))
+        element_type = type_match.group("type").lower() if type_match else ""
+        if element_type not in {"imprint", "page-number"}:
+            fragments.append(match.group("content"))
+    fragments.append(content[cursor:])
+    readable_text = _OCR_TAG_PATTERN.sub("", "".join(fragments))
+    return len(re.sub(r"\s+", "", readable_text))
+
+
+def _needs_ocr_fallback(content: str) -> bool:
+    """识别疑似只输出印章或页码、遗漏正文的 OCR 结果。"""
+
+    imprint_count = len(re.findall(r'\btype=["\']imprint["\']', content))
+    return (
+        imprint_count >= 3
+        and _ocr_substantive_character_count(content)
+        < _OCR_SUBSTANTIVE_THRESHOLD
+    )
+
+
+def _prefer_retry_ocr(primary: str, retry: str) -> str:
+    """仅在重读结果包含更多有效正文时替换首次 OCR。"""
+
+    if _ocr_substantive_character_count(retry) > _ocr_substantive_character_count(
+        primary
+    ):
+        return retry
+    return primary
 
 
 class DocumentOcrResult(TypedDict):
@@ -148,6 +200,22 @@ def _get_page_ocr_text(
 
 def _get_ocr_max_concurrency() -> int:
     return int(os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "5"))
+
+
+def _get_case_facts_max_attempts() -> int:
+    variable_name = "CASE_FACTS_EXTRACTION_MAX_ATTEMPTS"
+    raw_value = os.getenv(variable_name, "3")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{variable_name} 必须是正整数，实际为 {raw_value!r}"
+        ) from exc
+    if value < 1:
+        raise ValueError(
+            f"{variable_name} 必须是正整数，实际为 {value}"
+        )
+    return value
 
 
 def _build_error(
@@ -295,6 +363,114 @@ def _save_case_metadata(
         )
 
 
+async def _extract_case_facts(
+    state: PreReviewState,
+    agents: PreReviewAgents,
+) -> dict[str, Any]:
+    try:
+        # 案情只允许来自行政处罚决定书，缺失时依次使用结案审批表、立案审批表。
+        # 不使用全文 OCR，避免把无关证据材料送入模型。
+        preferred_names = ["行政处罚决定书", "结案审批表", "立案审批表"]
+        catalog = state.get("document_catalog", [])
+        selected_document = next(
+            (
+                item
+                for name in preferred_names
+                for item in catalog
+                if str(item.get("section_name", "")).strip() == name
+                and item.get("section_page", -1) >= 0
+            ),
+            None,
+        )
+
+        metadata = dict(state.get("case_metadata", {}))
+        if selected_document is None:
+            metadata["案情"] = None
+            cache_paths = get_cache_paths(state["pdf_path"])
+            atomic_write_json(cache_paths.metadata, metadata)
+            return {"case_metadata": metadata}
+
+        start_page = int(selected_document["section_page"])
+        later_pages = [
+            int(item["section_page"])
+            for item in catalog
+            if item.get("section_page", -1) > start_page
+        ]
+        end_page = min(later_pages, default=len(state["document_ocr_results"]))
+        ocr_parts = [
+            _get_page_ocr_text(state, index)
+            for index in range(start_page, end_page)
+        ]
+        ocr_text = "\n".join(
+            part for part in ocr_parts if part and part != "[OCR_EMPTY]"
+        ).strip()
+        if not ocr_text:
+            metadata["案情"] = None
+            cache_paths = get_cache_paths(state["pdf_path"])
+            atomic_write_json(cache_paths.metadata, metadata)
+            return {"case_metadata": metadata}
+
+        prompt_text = agents.build_task_prompt(
+            "case_facts_extractor",
+        ) + (
+            f"\n<case_metadata>\n{json.dumps(metadata, ensure_ascii=False)}"
+            f"\n</case_metadata>\n<document_ocr>\n{ocr_text}\n</document_ocr>"
+        )
+        max_attempts = _get_case_facts_max_attempts()
+        case_facts: str | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            attempt_prompt = prompt_text
+            if attempt > 1:
+                attempt_prompt += (
+                    "\n\n上一次未能提取出案情。请重新核对全部 OCR 原文，"
+                    "只要存在有原文支持的当事人及核心行为或事实，就必须提炼为非空案情。"
+                    "不得因信息不完整而遗漏可确认的事实。"
+                )
+            result = await agents.ainvoke_case_facts(attempt_prompt)
+            facts = (
+                result
+                if isinstance(result, dict)
+                else result.model_dump(by_alias=True)
+            )
+            extracted_facts = facts.get("案情")
+            if extracted_facts is not None and not isinstance(extracted_facts, str):
+                raise TypeError("案情必须是字符串或 null")
+            if isinstance(extracted_facts, str) and extracted_facts.strip():
+                case_facts = extracted_facts.strip()
+                trace_event(
+                    "case_facts_extraction_succeeded",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                )
+                break
+
+            trace_event(
+                "case_facts_extraction_retry",
+                attempt=attempt,
+                max_attempts=max_attempts,
+            )
+
+        if case_facts is None:
+            # 文书存在但没有可确认案情时，保留空值并继续后续预审。
+            metadata["案情"] = None
+            cache_paths = get_cache_paths(state["pdf_path"])
+            atomic_write_json(cache_paths.metadata, metadata)
+            return {"case_metadata": metadata}
+
+        metadata["案情"] = case_facts
+        cache_paths = get_cache_paths(state["pdf_path"])
+        atomic_write_json(cache_paths.metadata, metadata)
+        return {"case_metadata": metadata}
+    except Exception as exc:
+        return _build_error(
+            ErrorCode.META_DATA_EXTRACTION_ERROR,
+            "pre_review.extract_case_facts",
+            exc,
+            state,
+        )
+
+
 async def _extract_document_text(
     state: PreReviewState,
     agents: PreReviewAgents,
@@ -320,13 +496,22 @@ async def _extract_document_text(
             "document_ocr",
             meta_info=meta_info,
         )
+        fallback_prompt_text = (
+            f"{prompt_text}\n\n"
+            "上一轮 OCR 结果疑似只识别了印章、日期或页码，遗漏了正文。"
+            "请重新逐行核对当前原图：必须优先完整识别页面标题、文书名称、"
+            "文号和正文；即使存在表格线、脱敏遮挡、公章、勾选框或空白字段，"
+            "也不得只输出局部印章或日期。输出前确认：若图片中有清晰标题，"
+            "识别结果必须包含该标题。"
+        )
+
         async def extract_one_page(
             page_index: int,
         ) -> DocumentOcrResult:
             image_path = page_image_paths[page_index]
-            message = build_vision_message(prompt_text, image_path)
-            page_token = CURRENT_PAGE_INDEX.set(page_index)
-            try:
+
+            async def recognize(prompt: str) -> str:
+                message = build_vision_message(prompt, image_path)
                 response = await agents.document_ocr_agent.ainvoke(
                     {"messages": [message]}
                 )
@@ -338,6 +523,29 @@ async def _extract_document_text(
                     raise TypeError(
                         "OCR Agent 返回内容应为字符串，"
                         f"实际为 {type(content).__name__}"
+                    )
+                return content
+
+            page_token = CURRENT_PAGE_INDEX.set(page_index)
+            try:
+                content = await recognize(prompt_text)
+                if _needs_ocr_fallback(content):
+                    primary_score = _ocr_substantive_character_count(content)
+                    trace_event(
+                        "document_ocr_fallback_start",
+                        page_index=page_index,
+                        primary_substantive_character_count=primary_score,
+                    )
+                    retry_content = await recognize(fallback_prompt_text)
+                    content = _prefer_retry_ocr(content, retry_content)
+                    trace_event(
+                        "document_ocr_fallback_end",
+                        page_index=page_index,
+                        primary_substantive_character_count=primary_score,
+                        retry_substantive_character_count=(
+                            _ocr_substantive_character_count(retry_content)
+                        ),
+                        retry_selected=content == retry_content,
                     )
                 return {
                     "document_content": content,
@@ -682,6 +890,11 @@ def build_pre_review_graph(
                 progress.complete_stage("目录识别")
         return result
 
+    async def extract_case_facts_node(
+        state: PreReviewState,
+    ) -> dict[str, Any]:
+        return await _extract_case_facts(state, agents)
+
     async def locate_document_sections_node(
         state: PreReviewState,
     ) -> dict[str, Any]:
@@ -745,6 +958,7 @@ def build_pre_review_graph(
         "save_document_ocr_results",
         save_document_ocr_results_node,
     )
+    workflow.add_node("extract_case_facts", extract_case_facts_node)
     workflow.add_node(
         "classify_directory_page",
         classify_directory_page_node,
@@ -791,7 +1005,16 @@ def build_pre_review_graph(
     )
     workflow.add_conditional_edges(
         "locate_document_sections",
-        _route_section_location,
+        lambda state: (
+            "extract_case_facts"
+            if state.get("error_code") is None
+            and state["current_document_id"] > len(state["document_catalog"])
+            else _route_section_location(state)
+        ),
+    )
+    workflow.add_conditional_edges(
+        "extract_case_facts",
+        _route_to("save_pre_review_results"),
     )
     workflow.add_conditional_edges(
         "save_pre_review_results",

@@ -16,6 +16,7 @@ from errors.handler import (
 from utils import atomic_write_json
 from .base import ReviewSettings
 from .result_processing import ReviewResultProcessor
+from .rule_scoring import RuleScoreProcessor
 
 
 class ReviewResultCoordinator:
@@ -59,6 +60,12 @@ class ReviewResultCoordinator:
     def save_raw_results(self, results: List[Dict[str, Any]]) -> None:
         atomic_write_json(self.cache_paths.raw_review_results, results)
 
+    def save_scored_raw_results(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> None:
+        atomic_write_json(self.cache_paths.scored_raw_review_results, results)
+
     def save_processing_result(
         self,
         processing_result: Dict[str, Any],
@@ -80,6 +87,18 @@ class ReviewResultCoordinator:
         results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         return await self.create_result_processor().process(results)
+
+    def create_rule_score_processor(self) -> RuleScoreProcessor:
+        return RuleScoreProcessor(
+            recursion_limit=self.settings.agent_recursion_limit,
+            logger=self.logger,
+        )
+
+    async def score_raw_results(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        return await self.create_rule_score_processor().process(results)
 
     def _raise_result_error(
         self,
@@ -158,6 +177,17 @@ class ReviewResultCoordinator:
                     "review result processing skipped because max_tries is zero"
                 )
 
+            try:
+                scored_raw_results = await self.score_raw_results(raw_results)
+                self.save_scored_raw_results(scored_raw_results)
+            except Exception as exc:
+                self._raise_result_error(
+                    exc,
+                    "review.score_raw_results",
+                    message="原始审查结果已生成，但规则级评分流程失败",
+                    result_count=len(raw_results),
+                )
+
             self.logger.info(
                 "review completed. rule_count=%s finding_count=%s "
                 "failed_rule_count=%s result_path=%s",
@@ -175,6 +205,9 @@ class ReviewResultCoordinator:
                 "result_path": str(self.result_path),
                 "raw_result_path": str(
                     self.cache_paths.raw_review_results
+                ),
+                "scored_raw_result_path": str(
+                    self.cache_paths.scored_raw_review_results
                 ),
             }
         finally:

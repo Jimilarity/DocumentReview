@@ -758,3 +758,17 @@
     eng_name: "approving_leader_sign_date"
     type: "datetime"
     notes: null
+
+行政机关负责人集体讨论笔录:
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  讨论结论:
+    eng_name: "discussion_conclusion"
+    type: "str"
+    notes: "集体讨论形成的结论性意见或决定"
+  参与讨论负责人信息:
+    eng_name: "leader_participants"
+    type: "list[dict]"
+    notes: "参加集体讨论的行政机关负责人姓名、职务和签名信息"

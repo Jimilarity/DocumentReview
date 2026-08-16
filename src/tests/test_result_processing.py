@@ -234,16 +234,23 @@ class ResultProcessingDisabledTest(unittest.IsolatedAsyncioTestCase):
         )
         coordinator.logger = Mock()
         coordinator.cache_paths = SimpleNamespace(
-            raw_review_results=Path("raw_review_results.json")
+            raw_review_results=Path("raw_review_results.json"),
+            scored_raw_review_results=Path(
+                "raw_review_results_scored.json"
+            ),
         )
         coordinator.save_raw_results = Mock()
         coordinator.save_processing_result = Mock()
         coordinator.save_results = Mock()
         coordinator.process_results = AsyncMock()
+        coordinator.score_raw_results = AsyncMock(return_value=raw_results)
+        coordinator.save_scored_raw_results = Mock()
 
         output = await coordinator.finalize(raw_results, rule_count=1)
 
         coordinator.process_results.assert_not_awaited()
+        coordinator.score_raw_results.assert_awaited_once_with(raw_results)
+        coordinator.save_scored_raw_results.assert_called_once_with(raw_results)
         coordinator.save_results.assert_called_once_with(raw_results)
         self.assertFalse(output["result_processing_enabled"])
         self.assertEqual(output["review_results"], raw_results)

@@ -296,6 +296,42 @@ class StructuredFieldCacheTest(unittest.TestCase):
             )
             self.assertEqual(cache.next_event_id(), 4)
 
+    def test_two_receipts_may_target_one_compound_document_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = StructuredFieldCache.load(
+                Path(directory) / "structured_fields.json",
+                schema_version=2,
+                source_fingerprint="source-a",
+            )
+            cache.register_section(2, "送达回证")
+            cache.register_section(3, "送达回证")
+            cache.set_delivery_events(
+                2,
+                [
+                    {
+                        "event_id": 1,
+                        "source_order": 1,
+                        "event_text": "行政处罚决定书送达记录",
+                        "related_section_id": 1,
+                    }
+                ],
+            )
+
+            cache.set_delivery_events(
+                3,
+                [
+                    {
+                        "event_id": 2,
+                        "source_order": 1,
+                        "event_text": "决定书附件送达记录",
+                        "related_section_id": 1,
+                    }
+                ],
+            )
+
+            self.assertEqual(cache.delivery_events(2)[0]["event_id"], 1)
+            self.assertEqual(cache.delivery_events(3)[0]["event_id"], 2)
+
     def test_source_change_invalidates_derived_cache(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "structured_fields.json"
@@ -458,6 +494,60 @@ class StructuredFieldReadThroughTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DeliveryMappingInputTest(unittest.IsolatedAsyncioTestCase):
+    async def test_retry_may_target_section_used_by_another_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = StructuredFieldCache.load(
+                Path(directory) / "structured_fields.json",
+                schema_version=2,
+                source_fingerprint="source-a",
+            )
+            cache.register_section(2, "送达回证")
+            cache.register_section(3, "送达回证")
+            cache.set_delivery_events(
+                2,
+                [
+                    {
+                        "event_id": 1,
+                        "source_order": 1,
+                        "event_text": "行政处罚决定书送达记录",
+                        "related_section_id": 1,
+                    }
+                ],
+            )
+            cache.set_delivery_events(
+                3,
+                [
+                    {
+                        "event_id": 2,
+                        "source_order": 1,
+                        "event_text": "决定书附件送达记录",
+                        "related_section_id": TECHNICAL_MAPPING_FAILURE,
+                    }
+                ],
+            )
+            executor = ContextSensitiveReviewExecutor.__new__(
+                ContextSensitiveReviewExecutor
+            )
+
+            async def map_event(section_id, event):
+                self.assertEqual(section_id, 3)
+                self.assertEqual(event["event_id"], 2)
+                return 1
+
+            executor._map_delivery_event = map_event
+
+            changed = await executor._prewarm_delivery_receipt(
+                cache,
+                3,
+                [],
+            )
+
+            self.assertTrue(changed)
+            self.assertEqual(
+                cache.delivery_events(3)[0]["related_section_id"],
+                1,
+            )
+
     async def test_document_after_receipt_remains_in_full_directory(self) -> None:
         captured = {}
 
@@ -580,6 +670,22 @@ class ContextSensitiveRuleFilterTest(unittest.TestCase):
 
 
 class PrewarmPlanTest(unittest.TestCase):
+    def test_missing_field_spec_raises_readable_configuration_error(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.context_settings = {
+            "service_receipt_document_type": "送达回证",
+            "prewarm_fields": {},
+            "field_specs": {"询问笔录": {"被询问人信息": {"type": "str"}}},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "询问笔录.*缺少字段配置.*当事人信息",
+        ):
+            executor._specs_for_fields("询问笔录", ["当事人信息"])
+
     def test_section_resolves_fields_from_its_document_type(self) -> None:
         executor = ContextSensitiveReviewExecutor.__new__(
             ContextSensitiveReviewExecutor
@@ -681,6 +787,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
                 reason="两个角色字段指向同一人。",
             )
         )
+        executor.collect_external_knowledge = AsyncMock(return_value=[])
         rule = {
             "上下文相关审查事项": [
                 {
@@ -695,6 +802,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
         executor._consistency_judgement.assert_awaited_once_with(
             rule["上下文相关审查事项"][0],
             sources,
+            [],
         )
         self.assertEqual(result["issues"], [])
         self.assertEqual(set(result), {"issues"})

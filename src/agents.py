@@ -74,6 +74,10 @@ class CaseMetadata(SchemaModel):
     )
 
 
+class CaseFacts(SchemaModel):
+    case_facts: NonEmptyText | None = Field(alias="案情")
+
+
 class DirectoryItem(SchemaModel):
     section_id: int = Field(gt=0)
     section_name: str = Field(min_length=1)
@@ -138,6 +142,16 @@ class ProcessedFindingDraft(SchemaModel):
 
 class ReviewResultProcessingOutput(SchemaModel):
     findings: list[ProcessedFindingDraft] = Field(default_factory=list)
+
+
+class RuleScoreDraft(SchemaModel):
+    rule_index: int
+    score: float
+    explanation: NonEmptyText
+
+
+class RuleScoringOutput(SchemaModel):
+    scores: list[RuleScoreDraft] = Field(default_factory=list)
 
 
 class DocumentSectionMapping(SchemaModel):
@@ -379,6 +393,18 @@ class BaseAgents:
         )
         return agent.with_config(agent_trace_config(config_name))
 
+    def bind_text_tools_with_json_object(
+        self,
+        tools: Sequence[Any],
+    ) -> Any:
+        """分别绑定工具和 JSON Object 响应格式，兼容 OpenAI 客户端。"""
+
+        return self.text_model.bind_tools(
+            list(tools),
+            parallel_tool_calls=False,
+            strict=True,
+        ).bind(response_format={"type": "json_object"})
+
 
 # ============================================================
 # Pre-review agents
@@ -446,6 +472,14 @@ class PreReviewAgents(BaseAgents):
                 handle_errors=True,
             ),
         )
+        self.case_facts_extractor_agent = self.create_text_agent(
+            "case_facts_extractor_agent",
+            response_format=ToolStrategy(
+                CaseFacts,
+                tool_message_content="案件事实结构化输出已接收。",
+                handle_errors=True,
+            ),
+        )
         self.directory_classifier_agent = self.create_text_agent(
             "directory_classifier_agent",
             tools=[inspect_page_image],
@@ -478,19 +512,18 @@ class PreReviewAgents(BaseAgents):
         ).with_config(
             agent_trace_config("case_metadata_extractor_agent")
         )
-        self.directory_classifier_agent = self.text_model.bind_tools(
-            [inspect_page_image],
-            parallel_tool_calls=False,
-            strict=True,
+        self.case_facts_extractor_agent = self.text_model.bind(
             response_format=json_response_format,
+        ).with_config(
+            agent_trace_config("case_facts_extractor_agent")
+        )
+        self.directory_classifier_agent = self.bind_text_tools_with_json_object(
+            [inspect_page_image],
         ).with_config(
             agent_trace_config("directory_classifier_agent")
         )
-        self.section_classifier_agent = self.text_model.bind_tools(
+        self.section_classifier_agent = self.bind_text_tools_with_json_object(
             [inspect_page_image],
-            parallel_tool_calls=False,
-            strict=True,
-            response_format=json_response_format,
         ).with_config(
             agent_trace_config("section_classifier_agent")
         )
@@ -590,6 +623,30 @@ class PreReviewAgents(BaseAgents):
         return self._json_object_response(
             response,
             "case_metadata_extractor_agent",
+        )
+
+    async def ainvoke_case_facts(self, prompt_text: str) -> CaseFacts | dict[str, Any]:
+        if self.uses_tool_strategy:
+            response = await self.case_facts_extractor_agent.ainvoke(
+                {"messages": [{"role": "user", "content": prompt_text}]},
+                config={"recursion_limit": self._recursion_limit()},
+            )
+            return self._structured_response(
+                response,
+                CaseFacts,
+                "case_facts_extractor_agent",
+            )
+        system_message = SystemMessage(
+            content=self.build_json_object_system_prompt(
+                "case_facts_extractor_agent"
+            )
+        )
+        response = await self.case_facts_extractor_agent.ainvoke(
+            [system_message, HumanMessage(content=prompt_text)]
+        )
+        return self._json_object_response(
+            response,
+            "case_facts_extractor_agent",
         )
 
     async def ainvoke_directory_classifier(
@@ -991,11 +1048,8 @@ class ContextFreeReviewAgents(StructuredReviewAgents):
                 ],
             )
         elif self.review_tools:
-            self.review_agent = self.text_model.bind_tools(
+            self.review_agent = self.bind_text_tools_with_json_object(
                 self.review_tools,
-                parallel_tool_calls=False,
-                strict=True,
-                response_format={"type": "json_object"},
             ).with_config(
                 agent_trace_config("context_free_review_agent")
             )
@@ -1101,6 +1155,14 @@ class ContextSensitiveReviewAgents(StructuredReviewAgents):
                     handle_errors=True,
                 ),
             )
+            self.contextual_legality_review_agent = self.create_text_agent(
+                "contextual_legality_review_agent",
+                response_format=ToolStrategy(
+                    ReviewResult,
+                    tool_message_content="上下文相关合法性审查结果已接收。",
+                    handle_errors=True,
+                ),
+            )
         else:
             json_response_format = {"type": "json_object"}
             self.section_field_extractor_agent = self.text_model.bind(
@@ -1122,6 +1184,11 @@ class ContextSensitiveReviewAgents(StructuredReviewAgents):
                 response_format=json_response_format,
             ).with_config(
                 agent_trace_config("consistency_review_agent")
+            )
+            self.contextual_legality_review_agent = self.text_model.bind(
+                response_format=json_response_format,
+            ).with_config(
+                agent_trace_config("contextual_legality_review_agent")
             )
 
     async def ainvoke_section_field_extractor(
@@ -1176,6 +1243,19 @@ class ContextSensitiveReviewAgents(StructuredReviewAgents):
             recursion_limit=recursion_limit,
         )
 
+    async def ainvoke_contextual_legality_review(
+        self,
+        prompt_text: str,
+        recursion_limit: int,
+    ) -> ReviewResult:
+        return await self._ainvoke_structured_agent(
+            agent=self.contextual_legality_review_agent,
+            agent_name="contextual_legality_review_agent",
+            response_model=ReviewResult,
+            prompt_text=prompt_text,
+            recursion_limit=recursion_limit,
+        )
+
 
 class PostReviewAgents(BaseAgents):
     """审查结果协调阶段使用的固定结构化输出智能体。"""
@@ -1211,5 +1291,40 @@ class PostReviewAgents(BaseAgents):
             raise TypeError(
                 "review_result_processor_agent 缺少 "
                 "ReviewResultProcessingOutput 类型的 structured_response"
+            )
+        return structured_response
+
+
+class RuleScoringAgents(BaseAgents):
+    """根据逐规则原始审查结果计算规则级参考得分。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs["text_parallel_tool_calls"] = False
+        kwargs["text_enable_thinking"] = False
+        kwargs["vision_enable_thinking"] = False
+        super().__init__(**kwargs)
+        self.rule_scoring_agent = self.create_text_agent(
+            "rule_scoring_agent",
+            response_format=ToolStrategy(
+                RuleScoringOutput,
+                tool_message_content="规则级评分结构化输出已接收。",
+                handle_errors=True,
+            ),
+        )
+
+    async def ainvoke_rule_scoring(
+        self,
+        prompt_text: str,
+        recursion_limit: int,
+    ) -> RuleScoringOutput:
+        response = await self.rule_scoring_agent.ainvoke(
+            {"messages": [HumanMessage(content=prompt_text)]},
+            config={"recursion_limit": recursion_limit},
+        )
+        structured_response = response.get("structured_response")
+        if not isinstance(structured_response, RuleScoringOutput):
+            raise TypeError(
+                "rule_scoring_agent 缺少 RuleScoringOutput 类型的 "
+                "structured_response"
             )
         return structured_response

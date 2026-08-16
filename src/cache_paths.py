@@ -7,6 +7,7 @@ from constants import (
     CACHE_ROOT,
     PROJECT_ROOT,
     RAW_REVIEW_RESULT_FILENAME,
+    SCORED_RAW_REVIEW_RESULT_FILENAME,
     RESULT_ROOT,
     REVIEW_RESULT_PROCESSING_FILENAME,
     STRUCTURED_FIELD_CACHE_FILENAME,
@@ -25,6 +26,7 @@ class CachePaths:
     metadata: Path
     directory: Path
     raw_review_results: Path
+    scored_raw_review_results: Path
     review_result_processing: Path
     structured_fields: Path
 
@@ -93,6 +95,9 @@ def get_cache_paths(
         directory=cache_directory / "dir_info.json",
         raw_review_results=(
             cache_directory / RAW_REVIEW_RESULT_FILENAME
+        ),
+        scored_raw_review_results=(
+            cache_directory / SCORED_RAW_REVIEW_RESULT_FILENAME
         ),
         review_result_processing=(
             cache_directory / REVIEW_RESULT_PROCESSING_FILENAME

@@ -9,6 +9,7 @@ from agent_trace import AGENT_TRACE_CALLBACK
 _MODEL_RATE_LIMITER: InMemoryRateLimiter | None = None
 _MODEL_MAX_RETRIES = 8
 _MODEL_TIMEOUT_SECONDS = 120
+_VISION_MODEL_TIMEOUT_SECONDS = 360
 
 
 def _get_model_rate_limiter() -> InMemoryRateLimiter | None:
@@ -27,10 +28,10 @@ def _get_model_rate_limiter() -> InMemoryRateLimiter | None:
     return _MODEL_RATE_LIMITER
 
 
-def _transport_options() -> dict:
+def _transport_options(*, timeout_seconds: int = _MODEL_TIMEOUT_SECONDS) -> dict:
     options = {
         "max_retries": _MODEL_MAX_RETRIES,
-        "timeout": _MODEL_TIMEOUT_SECONDS,
+        "timeout": timeout_seconds,
     }
     rate_limiter = _get_model_rate_limiter()
     if rate_limiter is not None:
@@ -62,7 +63,7 @@ def build_vision_model(
         extra_body=extra_body,
         callbacks=[AGENT_TRACE_CALLBACK],
         tags=["model:vision"],
-        **_transport_options(),
+        **_transport_options(timeout_seconds=_VISION_MODEL_TIMEOUT_SECONDS),
     )
 
 

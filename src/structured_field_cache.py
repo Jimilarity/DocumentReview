@@ -517,15 +517,6 @@ class StructuredFieldCache:
         if len(related_ids) != len(set(related_ids)):
             raise ValueError("同一文书不能对应当前回证中的多个送达事件")
 
-        occupied = self.assigned_service_section_ids(
-            excluding_receipt_section_id=receipt_section_id
-        )
-        duplicate_ids = occupied & set(related_ids)
-        if duplicate_ids:
-            raise ValueError(
-                f"文书已绑定其他送达回证: {sorted(duplicate_ids)}"
-            )
-
         section = self._section(receipt_section_id)
         for key in [
             key
@@ -541,30 +532,6 @@ class StructuredFieldCache:
         self._metadata(receipt_section_id)[
             "delivery_extraction_completed"
         ] = True
-
-    def assigned_service_section_ids(
-        self,
-        *,
-        excluding_receipt_section_id: int | None = None,
-    ) -> set[int]:
-        assigned = set()
-        for receipt_section_id, metadata in self.section_metadata.items():
-            if metadata.get("delivery_extraction_completed") is not True:
-                continue
-            if (
-                excluding_receipt_section_id is not None
-                and int(receipt_section_id) == excluding_receipt_section_id
-            ):
-                continue
-            for event in self.delivery_events(int(receipt_section_id)):
-                related_section_id = event.get("related_section_id")
-                if (
-                    isinstance(related_section_id, int)
-                    and not isinstance(related_section_id, bool)
-                    and related_section_id > 0
-                ):
-                    assigned.add(related_section_id)
-        return assigned
 
     def delivery_event_for_document(
         self,

@@ -20,6 +20,11 @@ from rules.filtering import (
     retrieval_enhancement_module_names,
 )
 from rules.rule_set import RuleSetBuilder
+from rules.normalization import (
+    canonical_document_type,
+    load_rule_aliases,
+    normalize_rules,
+)
 from rules.rule_type import decode_rule_type, parse_rule_type_value
 
 
@@ -48,12 +53,15 @@ class RuleFilteringTest(unittest.TestCase):
             "备注",
             "检索增强",
         }
+        optional_top_level_keys = {"评分细则"}
         context_item_keys = {
             "任务",
             "字段",
             "评查类别",
             "审查事项",
             "评查说明",
+            "外部知识",
+            "法条检索查询",
         }
         self.assertEqual(
             set(self.all_rules),
@@ -61,7 +69,11 @@ class RuleFilteringTest(unittest.TestCase):
         )
         for rule in self.all_rule_items():
             self.assertTrue(required_top_level_keys.issubset(rule))
-            self.assertEqual(set(rule), required_top_level_keys)
+            self.assertTrue(
+                set(rule).issubset(
+                    required_top_level_keys | optional_top_level_keys
+                )
+            )
             self.assertNotIn("executor", rule)
             self.assertIsInstance(rule["上下文无关审查事项"], dict)
             self.assertIsInstance(rule["上下文相关审查事项"], list)
@@ -75,7 +87,12 @@ class RuleFilteringTest(unittest.TestCase):
                 )
                 self.assertTrue(
                     set(document_rule).issubset(
-                        {"审查事项", "评查说明", "外部知识"}
+                        {
+                            "审查事项",
+                            "评查说明",
+                            "外部知识",
+                            "法条检索查询",
+                        }
                     )
                 )
                 if "外部知识" in document_rule:
@@ -87,8 +104,16 @@ class RuleFilteringTest(unittest.TestCase):
                         )
                     )
             for item in rule["上下文相关审查事项"]:
-                self.assertEqual(set(item), context_item_keys)
+                self.assertTrue(set(item).issubset(context_item_keys))
                 self.assertIsInstance(item["字段"], dict)
+                if "外部知识" in item:
+                    self.assertIsInstance(item["外部知识"], list)
+                    self.assertTrue(
+                        all(
+                            isinstance(name, str) and name.strip()
+                            for name in item["外部知识"]
+                        )
+                    )
             retrieval_modules = rule["检索增强"]
             self.assertIsInstance(retrieval_modules, list)
             self.assertTrue(
@@ -98,14 +123,14 @@ class RuleFilteringTest(unittest.TestCase):
                 )
             )
 
-    def test_configured_consistency_tasks_use_one_current_task_name(self) -> None:
+    def test_configured_context_tasks_are_supported(self) -> None:
         configured_tasks = {
             item["任务"]
             for rule in self.all_rule_items()
             for item in rule["上下文相关审查事项"]
             if item["任务"]
         }
-        self.assertEqual(configured_tasks, {"一致性核查"})
+        self.assertEqual(configured_tasks, {"一致性核查", "不予处罚合法性审查"})
 
     def test_rule_type_parser_accepts_binary_forms(self) -> None:
         self.assertEqual(parse_rule_type_value("01010100"), 0b01010100)
@@ -238,14 +263,18 @@ class RuleFilteringTest(unittest.TestCase):
         self.assertTrue(selected)
 
     def test_rules_use_canonical_document_types(self) -> None:
+        normalized_rules = normalize_rules(
+            self.all_rule_items(),
+            load_rule_aliases(),
+        )
         document_names = {
             name
-            for rule in self.all_rule_items()
+            for rule in normalized_rules
             for name in rule["上下文无关审查事项"]
         }
         field_document_names = {
             name
-            for rule in self.all_rule_items()
+            for rule in normalized_rules
             for item in rule["上下文相关审查事项"]
             for name in item["字段"]
         }
@@ -264,6 +293,92 @@ class RuleFilteringTest(unittest.TestCase):
         self.assertIn("结案审批表", all_document_names)
         self.assertIn("责令改正通知书", all_document_names)
         self.assertIn("现场检查（勘验）笔录", all_document_names)
+
+    def test_model_document_names_match_standardization_rule_names(self) -> None:
+        aliases = load_rule_aliases()
+        expected_mappings = {
+            "现场勘验笔录": "现场检查（勘验）笔录",
+            "立案审批信息": "立案审批表",
+            "行政处罚事先(听证)告知书": "行政处罚事先（听证）告知书",
+            "行政处罚听证通知书": "听证通知书",
+            "行政机关负责人集体讨论笔录": "集体讨论笔录",
+            "调查询问笔录": "询问笔录",
+            "重大行政处罚决定法制审核意见书": "法制审核意见",
+            "行政相对人的身份证明或主体资格证明材料": "证件信息",
+            "抽样取证记录": "取证记录信息",
+            "当事人提交的复制件等证据材料": "取证记录信息",
+            "行政执法人员采集制作的证据材料": "取证记录信息",
+            "计算机数据、录音、录像、图片等证据材料": "取证记录信息",
+        }
+        self.assertEqual(
+            {
+                name: canonical_document_type(name, aliases)
+                for name in expected_mappings
+            },
+            expected_mappings,
+        )
+
+    def test_rule_aliases_normalize_without_mutating_source(self) -> None:
+        source = {
+            "序号": 1,
+            "上下文无关审查事项": {},
+            "上下文相关审查事项": [
+                {
+                    "字段": {
+                        "现场勘验笔录": [
+                            {"field": "当事人信息", "required": False}
+                        ],
+                        "现场检查（勘验）笔录": [
+                            {"field": "当事人信息", "required": True},
+                            {"field": "执法主体名称", "required": True},
+                        ],
+                    }
+                }
+            ],
+        }
+
+        normalized = normalize_rules([source])[0]
+
+        self.assertIn(
+            "现场勘验笔录",
+            source["上下文相关审查事项"][0]["字段"],
+        )
+        fields = normalized["上下文相关审查事项"][0]["字段"]
+        self.assertEqual(set(fields), {"现场检查（勘验）笔录"})
+        self.assertEqual(
+            fields["现场检查（勘验）笔录"],
+            [
+                {
+                    "field": "勘验/检查/询问对象信息",
+                    "required": True,
+                },
+                {"field": "执法主体名称", "required": True},
+            ],
+        )
+
+    def test_builder_normalizes_new_rule_document_and_field_aliases(self) -> None:
+        rules = (
+            RuleSetBuilder(self.all_rules)
+            .for_rule_type(0b10010000)
+            .build()
+            .rules
+        )
+        rule = next(item for item in rules if item["序号"] == 104)
+        fields = rule["上下文相关审查事项"][0]["字段"]
+
+        self.assertIn("立案审批表", fields)
+        self.assertNotIn("立案审批信息", fields)
+        self.assertIn("现场检查（勘验）笔录", fields)
+        self.assertNotIn("现场勘验笔录", fields)
+        self.assertNotIn("当场行政处罚决定书", fields)
+        self.assertEqual(
+            fields["询问笔录"][0]["field"],
+            "被询问人信息",
+        )
+        self.assertEqual(
+            fields["送达回证"][0]["field"],
+            "涉事人信息",
+        )
 
     def test_rule_360_uses_city_management_human_support(self) -> None:
         rule = next(

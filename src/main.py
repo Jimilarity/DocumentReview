@@ -14,6 +14,7 @@ from cache_paths import get_cache_paths, get_result_directory
 from post_review import run_post_review
 from pre_review import run_pre_review
 from review import run_review
+from structured_input import prepare_structured_json
 from rules.rule_type import parse_rule_type_value, validate_rule_type
 from errors.exceptions import (
     DocumentReviewError,
@@ -31,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--file_path",
         type=str,
         required=True,
-        help="absolute path of PDF file",
+        help="absolute path of PDF or structured JSON file",
     )
     parser.add_argument(
         "--rule_type",
@@ -48,10 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def validate_input(file_path: str) -> Path:
     path = Path(file_path)
-    if path.suffix.lower() != ".pdf":
-        raise ValueError(f"文件不是 PDF: {file_path}")
+    if path.suffix.lower() not in {".pdf", ".json"}:
+        raise ValueError(f"文件必须是 PDF 或 JSON: {file_path}")
     if not path.is_file():
-        raise FileNotFoundError(f"PDF 文件不存在: {file_path}")
+        raise FileNotFoundError(f"输入文件不存在: {file_path}")
     return path
 
 
@@ -67,14 +68,20 @@ async def main(
     validate_rule_type(rule_type)
 
     try:
-        pdf_path = validate_input(file_path)
+        input_path = validate_input(file_path)
 
         start_time = time.time()
 
-        cache_paths = get_cache_paths(pdf_path)
+        cache_paths = get_cache_paths(input_path)
         cache_files = cache_paths.pre_review_files
 
-        if all(path.is_file() for path in cache_files.values()):
+        if input_path.suffix.lower() == ".json":
+            print("检测到结构化 JSON，开始生成独立审查缓存")
+            pre_review_result = prepare_structured_json(
+                input_path,
+                rule_type,
+            )
+        elif all(path.is_file() for path in cache_files.values()):
             print("预处理缓存完整，跳过预处理步骤")
             pre_review_result = {
                 "skipped": True,
@@ -97,11 +104,11 @@ async def main(
             )
 
             pre_review_result = await run_pre_review(
-                str(pdf_path),
+                str(input_path),
             )
 
         review_result = await run_review(
-            str(pdf_path),
+            str(input_path),
             rule_type,
         )
         context_sensitive_preparation = review_result.get(
@@ -114,7 +121,7 @@ async def main(
         )
 
         post_review_result = await run_post_review(
-            str(pdf_path),
+            str(input_path),
             rule_type,
         )
 

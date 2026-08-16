@@ -18,6 +18,37 @@ from utils import load_yaml
 
 
 class AgentPromptConfigTest(unittest.TestCase):
+    def test_json_object_binds_tools_before_response_format(self) -> None:
+        calls = []
+
+        class BoundTools:
+            def bind(self, **kwargs):
+                calls.append(("bind", kwargs))
+                return "json-model"
+
+        class FakeModel:
+            def bind_tools(self, tools, **kwargs):
+                calls.append(("bind_tools", list(tools), kwargs))
+                return BoundTools()
+
+        agents = BaseAgents.__new__(BaseAgents)
+        agents.text_model = FakeModel()
+
+        result = agents.bind_text_tools_with_json_object(["tool-a"])
+
+        self.assertEqual(result, "json-model")
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "bind_tools",
+                    ["tool-a"],
+                    {"parallel_tool_calls": False, "strict": True},
+                ),
+                ("bind", {"response_format": {"type": "json_object"}}),
+            ],
+        )
+
     def test_common_system_prompt_is_loaded_from_agents_yaml(self) -> None:
         agents = BaseAgents.__new__(BaseAgents)
         agents.agents_config = load_yaml(
@@ -53,6 +84,9 @@ class AgentPromptConfigTest(unittest.TestCase):
         consistency_prompt = agents.build_agent_prompt(
             "consistency_review_agent"
         )
+        legality_prompt = agents.build_agent_prompt(
+            "contextual_legality_review_agent"
+        )
 
         self.assertIn("未载明", field_prompt)
         self.assertIn("通常一份送达回证", extraction_prompt)
@@ -60,6 +94,7 @@ class AgentPromptConfigTest(unittest.TestCase):
         self.assertIn("硬性筛选条件", mapping_prompt)
         self.assertIn("结构化字段值", consistency_prompt)
         self.assertIn("字段名称不同", consistency_prompt)
+        self.assertIn("外部知识", legality_prompt)
 
     def test_context_free_prompt_distinguishes_directory_metadata_and_pages(
         self,
@@ -90,6 +125,9 @@ class AgentPromptConfigTest(unittest.TestCase):
 
         self.assertIn("不是文书页面的实际标题", system_prompt)
         self.assertIn("不得自行", system_prompt)
+        self.assertIn("唯一允许使用的评价标准", system_prompt)
+        self.assertIn("可能只是识别", system_prompt)
+        self.assertIn("不得自行补充当前规则未提供的法条", system_prompt)
         self.assertIn("只用于定位和辨识", task_prompt)
         self.assertIn("按 page_index 顺序", task_prompt)
         self.assertIn("页眉页脚", task_prompt)
@@ -97,6 +135,39 @@ class AgentPromptConfigTest(unittest.TestCase):
         self.assertIn("唯一的审查范围", task_prompt)
         self.assertIn("只审查当前规则明确要求的事项", task_prompt)
         self.assertIn("直接说明违反了当前规则中的哪项要求", task_prompt)
+        self.assertIn("规则归属检查", task_prompt)
+        self.assertIn("留给其他规则审查", task_prompt)
+        self.assertIn("编有号码", task_prompt)
+        self.assertIn("case_metadata 只用于", task_prompt)
+        self.assertIn("只审查当前 section 是否出现该字段", task_prompt)
+        self.assertIn("不得仅因该文号与案卷元数据或其他文书文号不同", task_prompt)
+        self.assertIn("必须调用图片工具确认", task_prompt)
+
+    def test_consistency_prompt_forbids_cross_rule_legal_conclusions(
+        self,
+    ) -> None:
+        agents = BaseAgents.__new__(BaseAgents)
+        agents.agents_config = load_yaml(
+            SRC_ROOT / "config" / "agents.yaml"
+        )
+        agents.tasks_config = load_yaml(
+            SRC_ROOT / "config" / "tasks.yaml"
+        )
+
+        system_prompt = agents.build_agent_prompt(
+            "consistency_review_agent"
+        )
+        task_prompt = agents.build_task_prompt(
+            "consistency_review",
+            review_item="核对当事人名称",
+            sources="[]",
+            external_knowledge="[]",
+        )
+
+        self.assertIn("只能描述输入值之间", system_prompt)
+        self.assertIn("罚人代企", system_prompt)
+        self.assertIn("只判断所给字段值是否等价", task_prompt)
+        self.assertIn("法律风险和后果", task_prompt)
 
     def test_document_presence_uses_agent_and_task_configs(self) -> None:
         captured = {}

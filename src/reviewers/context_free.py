@@ -72,6 +72,9 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         )
 
     def get_local_tools(self) -> List[Any]:
+        context = self.require_context_free_context()
+        if context.meta_info.get("source_type") == "structured_json":
+            return []
         return [inspect_current_section_images]
 
     def create_agents(

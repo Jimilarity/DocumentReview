@@ -62,6 +62,7 @@ RETRIEVAL_ENHANCEMENT_RESULT_FILENAME = (
 )
 REVIEW_ERROR_REPORT_FILENAME = "review_error.json"
 RAW_REVIEW_RESULT_FILENAME = "raw_review_results.json"
+SCORED_RAW_REVIEW_RESULT_FILENAME = "raw_review_results_scored.json"
 REVIEW_RESULT_PROCESSING_FILENAME = "review_result_processing.json"
 STRUCTURED_FIELD_CACHE_FILENAME = "structured_fields.json"
 STRUCTURED_FIELD_CACHE_SCHEMA_VERSION = 6
@@ -77,6 +78,9 @@ REVIEW_PIPELINE_CONFIG_PATH = (
 )
 DOCUMENT_MAPPING_CONFIG_PATH = (
     PROJECT_ROOT / "src" / "config" / "document_mapping.yaml"
+)
+RULE_ALIASES_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "config" / "rule_aliases.yaml"
 )
 
 SENSITIVE_KEYS = {
