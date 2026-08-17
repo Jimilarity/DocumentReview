@@ -15,6 +15,7 @@ from review_config import (
     load_context_sensitive_settings,
 )
 from constants import STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
+from errors.handler import CURRENT_PDF_PATH
 from structured_field_cache import (
     TECHNICAL_MAPPING_FAILURE,
     StructuredFieldCache,
@@ -28,6 +29,7 @@ from reviewers.context_sensitive import (
 from reviewers.consistency import ConsistencySource
 from reviewers.document_mapping import normalize_document_section_map
 from rules.filtering import filter_context_sensitive_rules
+from rules.rule_set import RuleSetBuilder
 
 
 class ReviewConfigurationTest(unittest.TestCase):
@@ -77,6 +79,34 @@ class ReviewConfigurationTest(unittest.TestCase):
         self.assertIn("处罚具体内容", penalty_fields)
         self.assertIn("处罚决定种类", penalty_fields)
         self.assertIn("执法人员信息", penalty_fields)
+
+    def test_ordinary_penalty_context_fields_are_all_configured(self) -> None:
+        settings = load_context_sensitive_settings()
+        rules = (
+            RuleSetBuilder.from_json(
+                SRC_ROOT.parent / "data" / "all_rules.json"
+            )
+            .for_rule_type(0b11110100)
+            .build()
+            .rules
+        )
+
+        missing = []
+        for rule in rules:
+            for context_item in rule["上下文相关审查事项"]:
+                for document_type, field_items in context_item["字段"].items():
+                    document_specs = settings["field_specs"].get(
+                        document_type,
+                        {},
+                    )
+                    for field_item in field_items:
+                        field_name = field_item["field"]
+                        if field_name not in document_specs:
+                            missing.append(
+                                (rule["序号"], document_type, field_name)
+                            )
+
+        self.assertEqual(missing, [])
 
     def test_null_is_a_valid_extracted_value(self) -> None:
         validate_extracted_fields(
@@ -806,6 +836,41 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["issues"], [])
         self.assertEqual(set(result), {"issues"})
+
+
+class ContextSensitiveTraceRoutingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_execute_raw_routes_trace_events_to_current_document(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.file_path = Path("C:/cases/context-sensitive.pdf")
+        observed_paths = []
+
+        async def run_preparation():
+            observed_paths.append(CURRENT_PDF_PATH.get())
+            return {"preparation_completed": True}
+
+        async def run_consistency_reviews():
+            observed_paths.append(CURRENT_PDF_PATH.get())
+            return [{"rule_index": 113, "issues": []}]
+
+        executor.run_preparation = run_preparation
+        executor.run_consistency_reviews = run_consistency_reviews
+
+        outer_token = CURRENT_PDF_PATH.set("C:/cases/outer.pdf")
+        try:
+            result = await executor.execute_raw()
+            self.assertEqual(
+                observed_paths,
+                [
+                    "C:/cases/context-sensitive.pdf",
+                    "C:/cases/context-sensitive.pdf",
+                ],
+            )
+            self.assertEqual(result, [{"rule_index": 113, "issues": []}])
+            self.assertEqual(CURRENT_PDF_PATH.get(), "C:/cases/outer.pdf")
+        finally:
+            CURRENT_PDF_PATH.reset(outer_token)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from review_config import (
     ContextSensitiveSettings,
     load_context_sensitive_settings,
 )
-from errors.handler import CURRENT_RULE_INDEX
+from errors.handler import CURRENT_PDF_PATH, CURRENT_RULE_INDEX
 from structured_field_cache import (
     TECHNICAL_MAPPING_FAILURE,
     StructuredFieldCache,
@@ -1069,6 +1069,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
     async def execute_raw(self) -> List[Dict[str, Any]]:
         """按结构化准备、上下文相关审查顺序执行。"""
-
-        self.last_preparation_result = await self.run_preparation()
-        return await self.run_consistency_reviews()
+        pdf_path_token = CURRENT_PDF_PATH.set(str(self.file_path))
+        try:
+            self.last_preparation_result = await self.run_preparation()
+            return await self.run_consistency_reviews()
+        finally:
+            CURRENT_PDF_PATH.reset(pdf_path_token)

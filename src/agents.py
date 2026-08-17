@@ -82,6 +82,7 @@ class DirectoryItem(SchemaModel):
     section_id: int = Field(gt=0)
     section_name: str = Field(min_length=1)
     section_page: Literal[-1] = -1
+    catalog_page: str | int | None = None
     extra_fields: dict[
         str,
         str | int | float | bool | None,
@@ -104,7 +105,7 @@ class DirectoryIdentificationResult(SchemaModel):
 
 
 class SectionIdentificationResult(SchemaModel):
-    is_belong: bool
+    result: Literal["match", "conflict", "unknown"]
 
 
 class ReviewIssue(SchemaModel):

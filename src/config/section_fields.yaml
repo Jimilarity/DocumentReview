@@ -759,16 +759,212 @@
     type: "datetime"
     notes: null
 
-行政机关负责人集体讨论笔录:
+委托书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "principal_info"
+    type: "list[dict]"
+    notes: "委托书中的委托人信息"
+
+取证记录信息:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法人员信息:
+    eng_name: "enforce_officer_info"
+    type: "list[dict]"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+  证明对象/内容:
+    eng_name: "evidence_content"
+    type: "str"
+    notes: null
+
+调查审批信息:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法事项:
+    eng_name: "enforce_item"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+案件调查报告:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+整改复查意见书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法人员信息:
+    eng_name: "enforce_officer_info"
+    type: "list[dict]"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+行政处罚事先（听证）告知书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+放弃陈述、申辩申明:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+听证通知书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+听证笔录:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+听证报告:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法人员信息:
+    eng_name: "enforce_officer_info"
+    type: "list[dict]"
+    notes: null
+  当事人信息:
+    eng_name: "petitioner_name"
+    type: "str"
+    notes: "听证报告中的听证申请人姓名"
+
+法制审核意见:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法人员信息:
+    eng_name: "enforce_officer_info"
+    type: "list[dict]"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+行政处罚决定审批表:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法事项:
+    eng_name: "enforce_item"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+简易程序备案记录:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  执法人员信息:
+    eng_name: "enforce_officer_info"
+    type: "list[dict]"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+  证明对象/内容:
+    eng_name: "evidence_content"
+    type: "str"
+    notes: null
+
+延期执行申请书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+延期执行申请审批表:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+延期执行决定书:
+  执法主体名称:
+    eng_name: "subject_name"
+    type: "str"
+    notes: null
+  当事人信息:
+    eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+
+集体讨论笔录:
   案由:
     eng_name: "case_cause"
     type: "str"
     notes: null
   讨论结论:
-    eng_name: "discussion_conclusion"
+    eng_name: "final_opinion"
     type: "str"
     notes: "集体讨论形成的结论性意见或决定"
   参与讨论负责人信息:
-    eng_name: "leader_participants"
+    eng_name: "attende_info"
     type: "list[dict]"
     notes: "参加集体讨论的行政机关负责人姓名、职务和签名信息"

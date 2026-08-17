@@ -141,6 +141,8 @@ class AgentPromptConfigTest(unittest.TestCase):
         self.assertIn("case_metadata 只用于", task_prompt)
         self.assertIn("只审查当前 section 是否出现该字段", task_prompt)
         self.assertIn("不得仅因该文号与案卷元数据或其他文书文号不同", task_prompt)
+        self.assertIn("不得自行推断其还应包含哪些子字段", task_prompt)
+        self.assertIn("只有当前规则明确列出具体字段时", task_prompt)
         self.assertIn("必须调用图片工具确认", task_prompt)
 
     def test_consistency_prompt_forbids_cross_rule_legal_conclusions(

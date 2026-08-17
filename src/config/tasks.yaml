@@ -97,16 +97,18 @@ directory_classifier:
 
     如果不是目录，返回{{"is_dir": false, "dir_info": []}}。
     如果是目录，识别表头和目录项并返回{{"is_dir": true, "dir_info": [dict]}}。
-    每个目录项必须包含 section_id、section_name、section_page、extra_fields；
-    section_page 统一置为 -1。备注等其他目录列放入 extra_fields 对象。
+    每个目录项必须包含 section_id、section_name、section_page、catalog_page、extra_fields；
+    section_page 统一置为 -1。catalog_page 保留目录“页号/页码”列的原始值，
+    例如 12、"20/21"；目录未提供页号时为 null。备注等其他目录列放入 extra_fields 对象。
   expected_output: >
     只输出一个可由 json.loads 直接解析的 JSON 对象，不要添加解释或 Markdown。
-    is_dir 必须是布尔值，dir_info 必须是列表。目录项的顺序号、题名、页号
-    统一命名为 section_id、section_name、section_page；没有顺序号时依次补齐。
+    is_dir 必须是布尔值，dir_info 必须是列表。目录项的顺序号、题名、原始页号
+    统一命名为 section_id、section_name、catalog_page；section_page 是后续定位得到的
+    PDF 索引，此处固定为 -1。没有顺序号时依次补齐。
     示例1：
     {"is_dir": true, "dir_info": [
-      {"section_id": 1, "section_name": "行政处罚决定书", "section_page": -1, "extra_fields": {"备注": "原件"}},
-      {"section_id": 2, "section_name": "送达回执", "section_page": -1, "extra_fields": {"备注": "复印件"}}
+      {"section_id": 1, "section_name": "行政处罚决定书", "section_page": -1, "catalog_page": 1, "extra_fields": {"备注": "原件"}},
+      {"section_id": 2, "section_name": "送达回执", "section_page": -1, "catalog_page": "3/4", "extra_fields": {"备注": "复印件"}}
     ]}
     示例2：
     {"is_dir": false, "dir_info": []}
@@ -114,20 +116,25 @@ directory_classifier:
 
 section_classifier:
   description: |
-    以下是卷宗目录中当前待定位的唯一一个文书目录项：
-    {section_info}
+    判断当前单页与一个目录项的关系。只依据文书语义、标题、文号、版式和内容判断，
+    不要根据 OCR 页码猜测归属。
+
+    上一个目录项：{previous_section_name}
+    当前目录项：{section_name}
+    下一个目录项：{next_section_name}
 
     当前只判断一页，image_list 索引为 {page_index}。该页已经解析好的 OCR 文本如下：
     <page_ocr>
     {page_text}
     </page_ocr>
 
-    判断当前页是否属于该目录项。本次最多调用一次 inspect_page_image，调用时
+    本次最多调用一次 inspect_page_image，调用时
     page_index 必须为 {page_index}。
   expected_output: >
-    只输出一个合法 JSON 对象：{"is_belong": boolean}。
-    当前页属于给定目录项时返回 {"is_belong": true}，否则返回
-    {"is_belong": false}。不要输出解释、Markdown 或其他内容。
+    只输出一个合法 JSON 对象：{"result": "match|conflict|unknown"}。
+    当前页明确属于当前目录项时返回 match；当前页明确属于其他文书时返回 conflict；
+    照片、身份证明、空白页、OCR 缺失等无法仅凭本页可靠判断时返回 unknown。
+    不要输出解释、Markdown 或其他内容。
 
 
 document_presence_check:
@@ -221,6 +228,10 @@ document_section_mapping:
     或“责令改正违法行为决定书”。
     “送达回执”和“送达回证”视为同类文书，规范类型“送达回证”可以映射到
     目录中的“送达回执”。
+    只有目录标题本身明确表示“送达回证”“送达回执”或同义送达凭证的 section
+    才能映射为“送达回证”。不得把送达回证所对应、相邻或前置的被送达文书也
+    映射为“送达回证”；例如责令改正通知书与紧随其后的送达回执必须使用不同的
+    section_id。
 
     每个输入类型都已经过存在性判断，因此均应得到非空映射；不得因为组内其他
     类型已经使用某个 section，或因名称近似，而让适用类型返回空 section_ids。
@@ -280,6 +291,9 @@ context_free_document_review:
     不审查字段值是否正确，也不审查它是否与 case_metadata、案卷目录或其他文书一致。
     例如，当前规则只要求送达回证载明送达文书文号时，只要回证中确实载明了一个可辨认
     的文号，该项即视为已载明；不得仅因该文号与案卷元数据或其他文书文号不同而输出问题。
+    审查信息是否载明时，当前规则未明确列出必须审查的具体字段的，只要该信息已有内容
+    即视为已载明，不得自行推断其还应包含哪些子字段、细节或可追溯要素并认定缺失；
+    只有当前规则明确列出具体字段时，才逐项判断这些字段是否缺失。
 
     必须按 page_index 顺序检查当前 section 的全部页面，将它们视为同一份连续
     文书。正文内容在页尾未结束时，必须继续检查后续页面；页码、页眉页脚以

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from .models import KnowledgeContext, KnowledgeItem
 from .registry import KnowledgeRegistry, knowledge_registry
+from .tracing import trace_event
 
 
 class KnowledgeService:
@@ -54,10 +55,26 @@ class KnowledgeService:
         context: KnowledgeContext,
     ) -> list[KnowledgeItem]:
         function = self.registry.get(function_name)
+        trace_event(
+            "external_knowledge_start",
+            function_name=function_name,
+        )
         try:
             result = await function(context)
-            return self._normalize_items(function_name, result)
+            items = self._normalize_items(function_name, result)
+            trace_event(
+                "external_knowledge_end",
+                function_name=function_name,
+                item_count=len(items),
+            )
+            return items
         except Exception as exc:
+            trace_event(
+                "external_knowledge_error",
+                function_name=function_name,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
             self.logger.warning(
                 "knowledge function failed; skipped name=%s error=%s: %s",
                 function_name,

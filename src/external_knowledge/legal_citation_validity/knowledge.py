@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 from ..models import KnowledgeContext, KnowledgeItem
 from ..registry import register_knowledge
+from ..tracing import trace_event
 
 
 DEFAULT_BASE_URL = "https://review.zfqp.fun/law-api"
@@ -44,7 +45,9 @@ def _query_config(context: KnowledgeContext) -> dict[str, Any]:
 
 
 def _as_of(metadata: dict[str, Any], config: dict[str, Any]) -> str | None:
-    for field_name in _configured_string_list(config, "日期字段"):
+    configured_fields = _configured_string_list(config, "日期字段")
+    fallback_fields = ["案发日期", "违法行为发生日期", "立案日期", "结案日期"]
+    for field_name in dict.fromkeys([*configured_fields, *fallback_fields]):
         value = metadata.get(field_name)
         if isinstance(value, str):
             try:
@@ -54,20 +57,62 @@ def _as_of(metadata: dict[str, Any], config: dict[str, Any]) -> str | None:
     return None
 
 
-def _query_text(context: KnowledgeContext, config: dict[str, Any]) -> str:
-    case_reason = context.metadata.get("案由")
-    case_facts = context.metadata.get("案情")
-    if not isinstance(case_reason, str) or not case_reason.strip():
+def _text_value(metadata: dict[str, Any], field_name: str) -> str | None:
+    value = metadata.get(field_name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _query_text(
+    context: KnowledgeContext,
+    config: dict[str, Any],
+) -> tuple[str, list[str]]:
+    metadata = context.metadata
+    case_reason = _text_value(metadata, "案由")
+    reason_source = "案由"
+    if case_reason is None:
+        for field_name in ("违法事实", "案件简要情况", "处理结果"):
+            case_reason = _text_value(metadata, field_name)
+            if case_reason is not None:
+                reason_source = field_name
+                break
+    if case_reason is None:
         raise ValueError("法条检索需要案由")
-    if not isinstance(case_facts, str) or not case_facts.strip():
+
+    case_facts = _text_value(metadata, "案情")
+    fact_sources: list[str] = []
+    if case_facts is not None:
+        fact_sources.append("案情")
+    else:
+        fragments = []
+        for field_name in (
+            "违法事实",
+            "案件简要情况",
+            "处罚具体内容",
+            "陈述、申辩处理结果",
+            "处理结果",
+            "立案日期",
+            "结案日期",
+        ):
+            value = _text_value(metadata, field_name)
+            if value is not None:
+                fragments.append(f"{field_name}：{value}")
+                fact_sources.append(field_name)
+        if fragments:
+            case_facts = "；".join(fragments)
+        else:
+            case_facts = case_reason
+            fact_sources.append(reason_source)
+    if not case_facts:
         raise ValueError("法条检索需要案情")
 
-    parts = [f"案由：{case_reason.strip()}", f"案情：{case_facts.strip()}"]
+    parts = [f"案由：{case_reason}", f"案情：{case_facts}"]
     for field_name in _configured_string_list(config, "字段"):
-        value = context.metadata.get(field_name)
-        if isinstance(value, str) and value.strip():
-            parts.append(f"{field_name}：{value.strip()}")
-    return "\n".join(parts)[:MAX_QUERY_LENGTH]
+        value = _text_value(metadata, field_name)
+        if value is not None:
+            parts.append(f"{field_name}：{value}")
+    return "\n".join(parts)[:MAX_QUERY_LENGTH], fact_sources
 
 
 def _positive_int(config: dict[str, Any], key: str, default: int) -> int:
@@ -79,6 +124,7 @@ def _positive_int(config: dict[str, Any], key: str, default: int) -> int:
 
 def _request(payload: dict[str, Any]) -> dict[str, Any]:
     base_url = os.getenv("LAW_RETRIEVAL_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    endpoint = f"{base_url}/retrieve"
     api_key = os.getenv("LAW_RETRIEVAL_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("LAW_RETRIEVAL_API_KEY 未配置")
@@ -91,7 +137,7 @@ def _request(payload: dict[str, Any]) -> dict[str, Any]:
     if max_retries < 0:
         raise ValueError("LAW_RETRIEVAL_MAX_RETRIES 不能小于 0")
     request = Request(
-        f"{base_url}/retrieve",
+        endpoint,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={
             "Content-Type": "application/json; charset=utf-8",
@@ -101,15 +147,46 @@ def _request(payload: dict[str, Any]) -> dict[str, Any]:
     )
     for attempt in range(max_retries + 1):
         try:
+            trace_event(
+                "law_api_request",
+                provider="legal_citation_validity",
+                endpoint=endpoint,
+                attempt=attempt + 1,
+                payload=payload,
+            )
             with urlopen(request, timeout=timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
             if not isinstance(result, dict):
                 raise RuntimeError("法条检索 API 返回不是对象")
+            trace_event(
+                "law_api_response",
+                provider="legal_citation_validity",
+                endpoint=endpoint,
+                attempt=attempt + 1,
+                status_code=getattr(response, "status", None),
+                response=result,
+            )
             return result
         except HTTPError as exc:
+            trace_event(
+                "law_api_error",
+                provider="legal_citation_validity",
+                endpoint=endpoint,
+                attempt=attempt + 1,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
             if exc.code not in {502, 503} or attempt == max_retries:
                 raise RuntimeError(f"法条检索 API 请求失败: {exc}") from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            trace_event(
+                "law_api_error",
+                provider="legal_citation_validity",
+                endpoint=endpoint,
+                attempt=attempt + 1,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
             raise RuntimeError(f"法条检索 API 请求失败: {exc}") from exc
         time.sleep(0.5 * (attempt + 1))
     raise AssertionError("法条检索重试流程异常结束")
@@ -154,7 +231,7 @@ async def retrieve_legal_citation_validity(
     """用规则配置的上下文查询版本化法条，失败时由服务层降级。"""
 
     config = _query_config(context)
-    query = _query_text(context, config)
+    query, fact_sources = _query_text(context, config)
     if not query:
         return []
     payload: dict[str, Any] = {
@@ -169,10 +246,22 @@ async def retrieve_legal_citation_validity(
     as_of = _as_of(context.metadata, config)
     if as_of:
         payload["as_of"] = as_of
+    trace_event(
+        "law_api_query_context",
+        provider="legal_citation_validity",
+        case_facts_sources=fact_sources,
+        as_of=as_of,
+    )
     cache_key = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     with _cache_lock:
         cached = _cache.get(cache_key)
     if cached is not None:
+        trace_event(
+            "law_api_cache_hit",
+            provider="legal_citation_validity",
+            payload=payload,
+            candidate_count=len(cached),
+        )
         return cached
     items = _format_candidates(await asyncio.to_thread(_request, payload))
     with _cache_lock:

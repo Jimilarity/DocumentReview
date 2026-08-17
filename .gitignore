@@ -35,6 +35,8 @@ database/shenzhen_city_management_discretion/manifest.json
 
 # Local datasets and generated review artifacts
 /evaluation_dataset/
+/logs/
+/results/
 /cache/*
 !/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/
 /cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/*

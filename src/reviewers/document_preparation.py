@@ -23,6 +23,8 @@ from .document_mapping import (
 class DocumentReviewPreparationService:
     """为同一次案件审查统一生成且只生成一份文书 section 映射。"""
 
+    MAPPING_MAX_ATTEMPTS = 3
+
     def __init__(
         self,
         file_path: str | Path,
@@ -76,7 +78,7 @@ class DocumentReviewPreparationService:
             )
 
         agents = DocumentMappingAgents()
-        prompt = agents.build_task_prompt(
+        base_prompt = agents.build_task_prompt(
             "document_section_mapping",
             meta_info=json.dumps(meta_info, ensure_ascii=False, indent=2),
             document_names=json.dumps(
@@ -91,20 +93,45 @@ class DocumentReviewPreparationService:
                 indent=2,
             ),
         )
-        result = await agents.ainvoke_document_section_mapper(
-            prompt,
-            self.settings.agent_recursion_limit,
-        )
-        mapping = {
-            item.document_name: item.section_ids
-            for item in result.mappings
-        }
-        if len(result.mappings) != len(document_names) or set(mapping) != set(
-            document_names
-        ):
-            raise ValueError("文书章节映射没有覆盖全部已确认存在的文书")
+        normalized: Dict[str, List[int]] | None = None
+        validation_error: Exception | None = None
+        for attempt in range(1, self.MAPPING_MAX_ATTEMPTS + 1):
+            prompt = base_prompt
+            if validation_error is not None:
+                prompt += (
+                    "\n\n<previous_mapping_error>\n"
+                    f"{validation_error}\n"
+                    "</previous_mapping_error>\n"
+                    "上一次完整映射未通过程序校验。请根据目录标题逐项重新判断并"
+                    "返回完整 mappings；目录标题明确为送达回证/送达回执时才能映射"
+                    "为送达回证，其他文书不得因与回证相邻而映射为送达回证。"
+                    "除允许相容的类型组外，同一个 section_id 只能属于一个文书类型。"
+                )
+            try:
+                result = await agents.ainvoke_document_section_mapper(
+                    prompt,
+                    self.settings.agent_recursion_limit,
+                )
+                mapping = {
+                    item.document_name: item.section_ids
+                    for item in result.mappings
+                }
+                if (
+                    len(result.mappings) != len(document_names)
+                    or set(mapping) != set(document_names)
+                ):
+                    raise ValueError(
+                        "文书章节映射没有覆盖全部已确认存在的文书"
+                    )
+                normalized = normalize_document_section_map(mapping, dir_info)
+                break
+            except (TypeError, ValueError) as exc:
+                validation_error = exc
+                if attempt == self.MAPPING_MAX_ATTEMPTS:
+                    raise
 
-        normalized = normalize_document_section_map(mapping, dir_info)
+        if normalized is None:
+            raise RuntimeError("文书章节映射重试结束但未生成有效结果")
         cache.initialize_document_section_map(normalized)
         cache.save()
         return normalized

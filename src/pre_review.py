@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -36,6 +37,12 @@ _OCR_TYPE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _OCR_SUBSTANTIVE_THRESHOLD = 80
+_PAGE_NUMBER_PATTERN = re.compile(
+    r'<div\b(?P<attributes>[^>]*)>\s*(?P<content>[^<]*)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+_SECTION_PROBE_OFFSETS = (0, -1, 1, -2, 2)
+_SECTION_OCR_MAX_CHARS = 4000
 
 
 def _ocr_substantive_character_count(content: str) -> int:
@@ -94,7 +101,11 @@ class PreReviewState(TypedDict, total=False):
     document_catalog: list[dict[str, Any]]
     catalog_page_index: int
     catalog_scan_completed: bool
+    body_start_page_index: int
     current_document_id: int
+    section_candidate_pages: list[int]
+    section_candidate_cursor: int
+    section_predicted_page: int
 
     error_code: Optional[int]
     error_message: Optional[str]
@@ -196,6 +207,130 @@ def _get_page_ocr_text(
             f"实际为 {type(page_text).__name__}"
         )
     return page_text.strip() or "[OCR_EMPTY]"
+
+
+def _extract_page_number(page_text: str) -> int | None:
+    """Extract a tagged printed page number from one OCR page."""
+
+    for match in _PAGE_NUMBER_PATTERN.finditer(page_text):
+        attributes = match.group("attributes")
+        if not re.search(
+            r'\btype=["\']page-number["\']',
+            attributes,
+            re.IGNORECASE,
+        ):
+            continue
+        number_match = re.search(r"\d{1,4}", match.group("content"))
+        if number_match:
+            return int(number_match.group(0))
+    return None
+
+
+def _estimate_page_number_offset(
+    state: PreReviewState,
+) -> int | None:
+    """Estimate PDF-index minus printed-page offset by sequence consensus."""
+
+    body_start = int(
+        state.get("body_start_page_index", state.get("catalog_page_index", 0))
+    )
+    offsets: list[int] = []
+    for page_index in range(body_start, len(state["document_ocr_results"])):
+        page_number = _extract_page_number(
+            _get_page_ocr_text(state, page_index)
+        )
+        if page_number is not None and page_number > 0:
+            offsets.append(page_index - page_number)
+    if not offsets:
+        return None
+    return Counter(offsets).most_common(1)[0][0]
+
+
+def _parse_catalog_page(item: dict[str, Any]) -> int | None:
+    """Read the first page number while tolerating values such as ``20/21``."""
+
+    raw_value = item.get("catalog_page")
+    if raw_value is None:
+        extra_fields = item.get("extra_fields")
+        if isinstance(extra_fields, dict):
+            raw_value = (
+                extra_fields.get("页号")
+                or extra_fields.get("页码")
+                or extra_fields.get("目录页号")
+            )
+    if raw_value is None:
+        return None
+    match = re.search(r"\d{1,4}", str(raw_value))
+    return int(match.group(0)) if match else None
+
+
+def _compact_section_ocr(page_text: str) -> str:
+    if len(page_text) <= _SECTION_OCR_MAX_CHARS:
+        return page_text
+    head_size = _SECTION_OCR_MAX_CHARS * 3 // 4
+    return (
+        page_text[:head_size]
+        + "\n[OCR中间内容已省略]\n"
+        + page_text[-(_SECTION_OCR_MAX_CHARS - head_size):]
+    )
+
+
+def _section_candidate_pages(
+    state: PreReviewState,
+    document_id: int,
+) -> tuple[list[int], int, bool]:
+    catalog = state["document_catalog"]
+    item = catalog[document_id - 1]
+    page_count = len(state["page_image_paths"])
+    body_start = int(
+        state.get("body_start_page_index", state.get("catalog_page_index", 0))
+    )
+    previous_pages = [
+        int(section["section_page"])
+        for section in catalog[: document_id - 1]
+        if int(section.get("section_page", -1)) >= 0
+    ]
+    lower_bound = max(body_start, max(previous_pages, default=body_start - 1) + 1)
+    logical_page = _parse_catalog_page(item)
+    offset = _estimate_page_number_offset(state) if logical_page is not None else None
+    uses_catalog_page = logical_page is not None and offset is not None
+
+    if uses_catalog_page:
+        predicted_page = logical_page + offset
+        candidates = [
+            predicted_page + delta
+            for delta in _SECTION_PROBE_OFFSETS
+        ]
+    else:
+        predicted_page = lower_bound
+        candidates = list(range(lower_bound, page_count))
+
+    candidates = list(dict.fromkeys(
+        page
+        for page in candidates
+        if lower_bound <= page < page_count
+    ))
+    if not candidates:
+        candidates = [min(max(lower_bound, 0), max(page_count - 1, 0))]
+    predicted_page = min(
+        max(predicted_page, lower_bound),
+        max(page_count - 1, 0),
+    )
+    return candidates, predicted_page, uses_catalog_page
+
+
+def _section_result(parsed_result: Any) -> str:
+    """Normalize new tri-state and legacy boolean classifier responses."""
+
+    if isinstance(parsed_result, dict):
+        result = parsed_result.get("result")
+        if result in {"match", "conflict", "unknown"}:
+            return result
+        return "match" if parsed_result.get("is_belong") else "conflict"
+    result = getattr(parsed_result, "result", None)
+    if result in {"match", "conflict", "unknown"}:
+        return result
+    return "match" if getattr(parsed_result, "is_belong", False) else "conflict"
 
 
 def _get_ocr_max_concurrency() -> int:
@@ -651,7 +786,10 @@ async def _classify_directory_page(
 
         existing_catalog = state["document_catalog"]
         if not is_directory and existing_catalog:
-            return {"catalog_scan_completed": True}
+            return {
+                "catalog_scan_completed": True,
+                "body_start_page_index": page_index,
+            }
 
         return {
             "document_catalog": existing_catalog + directory_items,
@@ -672,26 +810,51 @@ async def _locate_document_sections(
     agents: PreReviewAgents,
 ) -> dict[str, Any]:
     try:
-        page_index = state["catalog_page_index"]
         document_id = state["current_document_id"]
         document_catalog = state["document_catalog"]
 
         if not document_catalog:
             raise ValueError("目录信息为空，无法定位文书章节")
-        if page_index >= len(state["page_image_paths"]):
-            raise IndexError(
-                f"已到达 PDF 末页，尚未定位目录项 {document_id}"
-            )
+        if document_id > len(document_catalog):
+            return {}
 
         section_context = document_catalog[document_id - 1]
+        candidate_pages = list(state.get("section_candidate_pages", []))
+        candidate_cursor = int(state.get("section_candidate_cursor", 0))
+        predicted_page = state.get("section_predicted_page")
+        if not candidate_pages or not 0 <= candidate_cursor < len(candidate_pages):
+            (
+                candidate_pages,
+                predicted_page,
+                uses_catalog_page,
+            ) = _section_candidate_pages(state, document_id)
+            candidate_cursor = 0
+        else:
+            logical_page = _parse_catalog_page(section_context)
+            uses_catalog_page = (
+                logical_page is not None
+                and _estimate_page_number_offset(state) is not None
+            )
+        page_index = candidate_pages[candidate_cursor]
 
-        page_text = _get_page_ocr_text(state, page_index)
+        previous_section_name = (
+            str(document_catalog[document_id - 2].get("section_name", ""))
+            if document_id > 1
+            else "（无）"
+        )
+        next_section_name = (
+            str(document_catalog[document_id].get("section_name", ""))
+            if document_id < len(document_catalog)
+            else "（无）"
+        )
+        page_text = _compact_section_ocr(
+            _get_page_ocr_text(state, page_index)
+        )
         prompt_text = agents.build_task_prompt(
             "section_classifier",
-            section_info=json.dumps(
-                section_context,
-                ensure_ascii=False,
-            ),
+            previous_section_name=previous_section_name,
+            section_name=str(section_context.get("section_name", "")),
+            next_section_name=next_section_name,
             page_index=page_index,
             page_text=page_text,
         )
@@ -699,24 +862,61 @@ async def _locate_document_sections(
             prompt_text=prompt_text,
             page_index=page_index,
         )
-        if isinstance(parsed_result, dict):
-            is_belong = parsed_result["is_belong"]
-        else:
-            is_belong = parsed_result.is_belong
+        classification = _section_result(parsed_result)
 
         updated_catalog = copy.deepcopy(document_catalog)
-        next_document_id = document_id
-        if is_belong:
+        should_accept = classification == "match" or (
+            classification == "unknown"
+            and uses_catalog_page
+            and page_index == predicted_page
+        )
+        if should_accept:
+            accepted_page = (
+                page_index if classification == "match" else int(predicted_page)
+            )
             target_document = updated_catalog[document_id - 1]
-            if target_document.get("section_page", -1) == -1:
-                target_document["section_page"] = page_index
-            next_document_id = document_id + 1
+            target_document["section_page"] = accepted_page
+            if classification == "match" and accepted_page == predicted_page:
+                target_document["location_source"] = "page_and_semantic"
+                target_document["location_confidence"] = 0.95
+            elif classification == "match":
+                target_document["location_source"] = "nearby_semantic"
+                target_document["location_confidence"] = 0.85
+            else:
+                target_document["location_source"] = "catalog_page"
+                target_document["location_confidence"] = 0.65
+            target_document["needs_review"] = False
+            return {
+                "document_catalog": updated_catalog,
+                "current_document_id": document_id + 1,
+                "catalog_page_index": accepted_page + 1,
+                "section_candidate_pages": [],
+                "section_candidate_cursor": 0,
+                "section_predicted_page": accepted_page,
+            }
 
-        next_page_index = page_index + 1
+        next_cursor = candidate_cursor + 1
+        if next_cursor < len(candidate_pages):
+            return {
+                "section_candidate_pages": candidate_pages,
+                "section_candidate_cursor": next_cursor,
+                "section_predicted_page": int(predicted_page),
+                "catalog_page_index": candidate_pages[next_cursor],
+            }
+
+        fallback_page = int(predicted_page)
+        target_document = updated_catalog[document_id - 1]
+        target_document["section_page"] = fallback_page
+        target_document["location_source"] = "location_fallback"
+        target_document["location_confidence"] = 0.3
+        target_document["needs_review"] = True
         return {
             "document_catalog": updated_catalog,
-            "current_document_id": next_document_id,
-            "catalog_page_index": next_page_index,
+            "current_document_id": document_id + 1,
+            "catalog_page_index": fallback_page + 1,
+            "section_candidate_pages": [],
+            "section_candidate_cursor": 0,
+            "section_predicted_page": fallback_page,
         }
     except Exception as exc:
         return _build_error(
@@ -780,9 +980,7 @@ def _route_section_location(state: PreReviewState):
         return "handle_error"
     if state["current_document_id"] > len(state["document_catalog"]):
         return "save_pre_review_results"
-    if state["catalog_page_index"] < len(state["page_image_paths"]):
-        return "locate_document_sections"
-    return "document_section_not_found"
+    return "locate_document_sections"
 
 
 def _handle_error(state: PreReviewState) -> dict[str, Any]:
@@ -912,17 +1110,24 @@ def build_pre_review_graph(
         result = await _locate_document_sections(state, agents)
         if progress and result.get("error_code") is None:
             document_count = len(state["document_catalog"])
+            next_document_id = result.get(
+                "current_document_id",
+                state["current_document_id"],
+            )
             located_count = min(
                 document_count,
-                result["current_document_id"] - 1,
+                next_document_id - 1,
             )
             progress.update_pages(
                 "章节定位",
-                result["catalog_page_index"],
+                result.get(
+                    "catalog_page_index",
+                    state["catalog_page_index"],
+                ),
                 len(state["page_image_paths"]),
                 status=f"已定位 {located_count}/{document_count} 项",
             )
-            if result["current_document_id"] > document_count:
+            if next_document_id > document_count:
                 progress.complete_stage("章节定位")
         return result
 
@@ -1040,7 +1245,11 @@ async def run_pre_review(
         "document_catalog": [],
         "catalog_page_index": 0,
         "catalog_scan_completed": False,
+        "body_start_page_index": 0,
         "current_document_id": 1,
+        "section_candidate_pages": [],
+        "section_candidate_cursor": 0,
+        "section_predicted_page": 0,
     }
 
     progress = PreReviewProgress()
