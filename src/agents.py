@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationError,
     model_validator,
 )
 
@@ -76,6 +77,25 @@ class CaseMetadata(SchemaModel):
 
 class CaseFacts(SchemaModel):
     case_facts: NonEmptyText | None = Field(alias="案情")
+    # 无目录案卷会在同一轮关键文书抽取中增量补齐这些案件元数据字段。
+    law_enforcement_unit: NonEmptyText | None = Field(
+        default=None,
+        alias="执法单位",
+    )
+    case_name: NonEmptyText | None = Field(default=None, alias="案卷名称")
+    case_number: NonEmptyText | None = Field(default=None, alias="案号")
+    cause_of_action: NonEmptyText | None = Field(default=None, alias="案由")
+    party: NonEmptyText | None = Field(default=None, alias="当事人")
+    filing_date: NonEmptyText | None = Field(default=None, alias="立案日期")
+    closing_date: NonEmptyText | None = Field(default=None, alias="结案日期")
+    disposition: NonEmptyText | None = Field(default=None, alias="处理结果")
+    case_officers: (
+        list[EnforcementOfficer] | NonEmptyText | None
+    ) = Field(default=None, alias="案件承办人员及执法证件号")
+    extra_fields: dict[str, Any] = Field(
+        default_factory=dict,
+        alias="额外字段",
+    )
 
 
 class DirectoryItem(SchemaModel):
@@ -106,6 +126,32 @@ class DirectoryIdentificationResult(SchemaModel):
 
 class SectionIdentificationResult(SchemaModel):
     result: Literal["match", "conflict", "unknown"]
+
+
+class PageBoundaryResult(SchemaModel):
+    relation: Literal["same_document", "new_document"]
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class SegmentStartClassificationResult(SchemaModel):
+    section_kind: Literal[
+        "case_document",
+        "evidence_material",
+        "other_material",
+    ]
+    normalized_document_type: str | None = None
+    material_type: str | None = None
+    subject_role: Literal[
+        "当事人",
+        "法定代表人",
+        "委托代理人",
+        "执法人员",
+        "证人",
+        "鉴定检测人员",
+        "其他相关人员",
+        "无法确定",
+        "不适用",
+    ] = "无法确定"
 
 
 class ReviewIssue(SchemaModel):
@@ -291,6 +337,7 @@ class BaseAgents:
         text_parallel_tool_calls: bool | None = None,
         text_enable_thinking: bool | None = None,
         vision_enable_thinking: bool | None = None,
+        text_only: bool | None = None,
     ) -> None:
         self.agents_config = load_yaml(
             self.config_dir / agents_config_name
@@ -303,8 +350,18 @@ class BaseAgents:
             parallel_tool_calls=text_parallel_tool_calls,
             enable_thinking=text_enable_thinking,
         )
-        self.vision_model = build_vision_model(
-            enable_thinking=vision_enable_thinking,
+        if text_only is None:
+            text_only = os.getenv("REVIEW_TEXT_ONLY", "0").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        self.text_only = text_only
+        self.vision_model = (
+            self.text_model
+            if text_only
+            else build_vision_model(enable_thinking=vision_enable_thinking)
         )
 
     def build_agent_prompt(self, agent_name: str) -> str:
@@ -424,6 +481,11 @@ class PreReviewAgents(BaseAgents):
         kwargs.setdefault("text_parallel_tool_calls", False)
         kwargs.setdefault("text_enable_thinking", enable_thinking)
         kwargs.setdefault("vision_enable_thinking", enable_thinking)
+        kwargs.setdefault(
+            "text_only",
+            os.getenv("REVIEW_TEXT_ONLY", "0").strip().lower()
+            in {"1", "true", "yes", "on"},
+        )
         self.response_format_mode = self._get_response_format_mode()
         super().__init__(**kwargs)
         self.document_ocr_agent = self.create_vision_agent(
@@ -483,27 +545,43 @@ class PreReviewAgents(BaseAgents):
         )
         self.directory_classifier_agent = self.create_text_agent(
             "directory_classifier_agent",
-            tools=[inspect_page_image],
+            tools=[] if self.text_only else [inspect_page_image],
             response_format=ToolStrategy(
                 DirectoryIdentificationResult,
                 tool_message_content="目录页判断结构化输出已接收。",
                 handle_errors=True,
             ),
-            middleware=[
+            middleware=[] if self.text_only else [
                 SingleUseToolMiddleware(inspect_page_image.name)
             ],
         )
         self.section_classifier_agent = self.create_text_agent(
             "section_classifier_agent",
-            tools=[inspect_page_image],
+            tools=[] if self.text_only else [inspect_page_image],
             response_format=ToolStrategy(
                 SectionIdentificationResult,
                 tool_message_content="文书章节判断结构化输出已接收。",
                 handle_errors=True,
             ),
-            middleware=[
+            middleware=[] if self.text_only else [
                 SingleUseToolMiddleware(inspect_page_image.name)
             ],
+        )
+        self.page_boundary_classifier_agent = self.create_text_agent(
+            "page_boundary_classifier_agent",
+            response_format=ToolStrategy(
+                PageBoundaryResult,
+                tool_message_content="页间文书边界判断结构化输出已接收。",
+                handle_errors=True,
+            ),
+        )
+        self.segment_start_classifier_agent = self.create_text_agent(
+            "segment_start_classifier_agent",
+            response_format=ToolStrategy(
+                SegmentStartClassificationResult,
+                tool_message_content="分段起始页分类结构化输出已接收。",
+                handle_errors=True,
+            ),
         )
 
     def _initialize_json_object_models(self) -> None:
@@ -519,14 +597,24 @@ class PreReviewAgents(BaseAgents):
             agent_trace_config("case_facts_extractor_agent")
         )
         self.directory_classifier_agent = self.bind_text_tools_with_json_object(
-            [inspect_page_image],
+            [] if self.text_only else [inspect_page_image],
         ).with_config(
             agent_trace_config("directory_classifier_agent")
         )
         self.section_classifier_agent = self.bind_text_tools_with_json_object(
-            [inspect_page_image],
+            [] if self.text_only else [inspect_page_image],
         ).with_config(
             agent_trace_config("section_classifier_agent")
+        )
+        self.page_boundary_classifier_agent = self.text_model.bind(
+            response_format=json_response_format,
+        ).with_config(
+            agent_trace_config("page_boundary_classifier_agent")
+        )
+        self.segment_start_classifier_agent = self.text_model.bind(
+            response_format=json_response_format,
+        ).with_config(
+            agent_trace_config("segment_start_classifier_agent")
         )
         self._classifier_json_result_model = self.text_model.bind(
             response_format=json_response_format,
@@ -688,6 +776,68 @@ class PreReviewAgents(BaseAgents):
             model=self.section_classifier_agent,
             prompt_text=prompt_text,
             page_index=page_index,
+        )
+
+    async def ainvoke_page_boundary_classifier(
+        self,
+        prompt_text: str,
+    ) -> PageBoundaryResult:
+        if self.uses_tool_strategy:
+            response = await self.page_boundary_classifier_agent.ainvoke(
+                {"messages": [HumanMessage(content=prompt_text)]},
+                config={"recursion_limit": self._recursion_limit()},
+            )
+            return self._structured_response(
+                response,
+                PageBoundaryResult,
+                "page_boundary_classifier_agent",
+            )
+        response = await self.page_boundary_classifier_agent.ainvoke(
+            [
+                SystemMessage(
+                    content=self.build_json_object_system_prompt(
+                        "page_boundary_classifier_agent"
+                    )
+                ),
+                HumanMessage(content=prompt_text),
+            ]
+        )
+        return PageBoundaryResult.model_validate(
+            self._json_object_response(
+                response,
+                "page_boundary_classifier_agent",
+            )
+        )
+
+    async def ainvoke_segment_start_classifier(
+        self,
+        prompt_text: str,
+    ) -> SegmentStartClassificationResult:
+        if self.uses_tool_strategy:
+            response = await self.segment_start_classifier_agent.ainvoke(
+                {"messages": [HumanMessage(content=prompt_text)]},
+                config={"recursion_limit": self._recursion_limit()},
+            )
+            return self._structured_response(
+                response,
+                SegmentStartClassificationResult,
+                "segment_start_classifier_agent",
+            )
+        response = await self.segment_start_classifier_agent.ainvoke(
+            [
+                SystemMessage(
+                    content=self.build_json_object_system_prompt(
+                        "segment_start_classifier_agent"
+                    )
+                ),
+                HumanMessage(content=prompt_text),
+            ]
+        )
+        return SegmentStartClassificationResult.model_validate(
+            self._json_object_response(
+                response,
+                "segment_start_classifier_agent",
+            )
         )
 
     async def _ainvoke_tool_strategy_classifier(
@@ -873,6 +1023,42 @@ class StructuredReviewAgents(BaseAgents):
             )
         return structured_response
 
+    @staticmethod
+    def _structured_output_max_attempts() -> int:
+        variable_name = "REVIEW_STRUCTURED_OUTPUT_MAX_ATTEMPTS"
+        raw_value = os.getenv(variable_name, "3")
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{variable_name} 必须是正整数，实际为 {raw_value!r}"
+            ) from exc
+        if value < 1:
+            raise ValueError(
+                f"{variable_name} 必须大于等于 1，实际为 {value}"
+            )
+        return value
+
+    @staticmethod
+    def _structured_retry_prompt(
+        prompt_text: str,
+        response_model: type[SchemaT],
+        exc: Exception,
+    ) -> str:
+        schema = json.dumps(
+            response_model.model_json_schema(),
+            ensure_ascii=False,
+        )
+        return (
+            f"{prompt_text}\n\n<previous_output_error>\n"
+            "上一轮输出未通过程序结构校验。"
+            f"错误：{type(exc).__name__}: {exc}\n"
+            f"必须返回符合以下 JSON Schema 的对象：{schema}\n"
+            "不得返回数字、字符串、数组、解释或 Markdown。"
+            "请重新读取原任务并输出完整对象。\n"
+            "</previous_output_error>"
+        )
+
     async def _ainvoke_structured_agent(
         self,
         *,
@@ -881,29 +1067,56 @@ class StructuredReviewAgents(BaseAgents):
         response_model: type[SchemaT],
         prompt_text: str,
         recursion_limit: int,
+        force_json_object: bool = False,
     ) -> SchemaT:
-        if self.uses_tool_strategy:
-            response = await agent.ainvoke(
-                {"messages": [HumanMessage(content=prompt_text)]},
-                config={"recursion_limit": recursion_limit},
-            )
-            return self._structured_response(
-                response,
-                response_model,
-                agent_name,
-            )
+        max_attempts = self._structured_output_max_attempts()
+        current_prompt = prompt_text
+        last_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if self.uses_tool_strategy and not force_json_object:
+                    response = await agent.ainvoke(
+                        {"messages": [HumanMessage(content=current_prompt)]},
+                        config={"recursion_limit": recursion_limit},
+                    )
+                    return self._structured_response(
+                        response,
+                        response_model,
+                        agent_name,
+                    )
 
-        response = await agent.ainvoke(
-            [
-                SystemMessage(
-                    content=self.build_json_object_system_prompt(agent_name)
-                ),
-                HumanMessage(content=prompt_text),
-            ]
-        )
-        return response_model.model_validate(
-            extract_json(self.message_text(response))
-        )
+                response = await agent.ainvoke(
+                    [
+                        SystemMessage(
+                            content=self.build_json_object_system_prompt(
+                                agent_name
+                            )
+                        ),
+                        HumanMessage(content=current_prompt),
+                    ]
+                )
+                return response_model.model_validate(
+                    extract_json(self.message_text(response))
+                )
+            except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+                last_error = exc
+                trace_event(
+                    "structured_output_validation_retry",
+                    agent_name=agent_name,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    exception_type=type(exc).__name__,
+                    message=str(exc),
+                )
+                if attempt == max_attempts:
+                    raise
+                current_prompt = self._structured_retry_prompt(
+                    prompt_text,
+                    response_model,
+                    exc,
+                )
+        assert last_error is not None
+        raise last_error
 
 
 class DocumentMappingAgents(StructuredReviewAgents):
@@ -994,29 +1207,12 @@ class DocumentMappingAgents(StructuredReviewAgents):
         prompt_text: str,
         recursion_limit: int,
     ) -> DocumentSectionMappingResult:
-        if self.uses_tool_strategy:
-            response = await self.document_section_mapper_agent.ainvoke(
-                {"messages": [HumanMessage(content=prompt_text)]},
-                config={"recursion_limit": recursion_limit},
-            )
-            return self._structured_response(
-                response,
-                DocumentSectionMappingResult,
-                "document_section_mapper_agent",
-            )
-
-        response = await self.document_section_mapper_agent.ainvoke(
-            [
-                SystemMessage(
-                    content=self.build_json_object_system_prompt(
-                        "document_section_mapper_agent"
-                    )
-                ),
-                HumanMessage(content=prompt_text),
-            ]
-        )
-        return DocumentSectionMappingResult.model_validate(
-            extract_json(self.message_text(response))
+        return await self._ainvoke_structured_agent(
+            agent=self.document_section_mapper_agent,
+            response_model=DocumentSectionMappingResult,
+            agent_name="document_section_mapper_agent",
+            prompt_text=prompt_text,
+            recursion_limit=recursion_limit,
         )
 
 
@@ -1258,7 +1454,7 @@ class ContextSensitiveReviewAgents(StructuredReviewAgents):
         )
 
 
-class PostReviewAgents(BaseAgents):
+class PostReviewAgents(StructuredReviewAgents):
     """审查结果协调阶段使用的固定结构化输出智能体。"""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1266,6 +1462,14 @@ class PostReviewAgents(BaseAgents):
         kwargs["text_enable_thinking"] = False
         kwargs["vision_enable_thinking"] = False
         super().__init__(**kwargs)
+        if not self.uses_tool_strategy:
+            self.result_processor_agent = self.text_model.bind(
+                response_format={"type": "json_object"},
+            ).with_config(
+                agent_trace_config("review_result_processor_agent")
+            )
+            self.result_processor_json_agent = None
+            return
         self.result_processor_agent = self.create_text_agent(
             "review_result_processor_agent",
             response_format=ToolStrategy(
@@ -1274,29 +1478,45 @@ class PostReviewAgents(BaseAgents):
                 handle_errors=True,
             ),
         )
+        if self.uses_tool_strategy:
+            self.result_processor_json_agent = self.text_model.bind(
+                response_format={"type": "json_object"},
+            ).with_config(
+                agent_trace_config("review_result_processor_agent_json")
+            )
 
     async def ainvoke_result_processing(
         self,
         prompt_text: str,
         recursion_limit: int,
     ) -> ReviewResultProcessingOutput:
-        response = await self.result_processor_agent.ainvoke(
-            {"messages": [HumanMessage(content=prompt_text)]},
-            config={"recursion_limit": recursion_limit},
-        )
-        structured_response = response.get("structured_response")
-        if not isinstance(
-            structured_response,
-            ReviewResultProcessingOutput,
-        ):
-            raise TypeError(
-                "review_result_processor_agent 缺少 "
-                "ReviewResultProcessingOutput 类型的 structured_response"
+        try:
+            return await self._ainvoke_structured_agent(
+                agent=self.result_processor_agent,
+                agent_name="review_result_processor_agent",
+                response_model=ReviewResultProcessingOutput,
+                prompt_text=prompt_text,
+                recursion_limit=recursion_limit,
             )
-        return structured_response
+        except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+            if self.result_processor_json_agent is None:
+                raise
+            trace_event(
+                "structured_output_format_fallback",
+                agent_name="review_result_processor_agent",
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
+            return await self._ainvoke_structured_agent(
+                agent=self.result_processor_json_agent,
+                agent_name="review_result_processor_agent",
+                response_model=ReviewResultProcessingOutput,
+                prompt_text=prompt_text,
+                recursion_limit=recursion_limit,
+                force_json_object=True,
+            )
 
-
-class RuleScoringAgents(BaseAgents):
+class RuleScoringAgents(StructuredReviewAgents):
     """根据逐规则原始审查结果计算规则级参考得分。"""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1304,6 +1524,14 @@ class RuleScoringAgents(BaseAgents):
         kwargs["text_enable_thinking"] = False
         kwargs["vision_enable_thinking"] = False
         super().__init__(**kwargs)
+        if not self.uses_tool_strategy:
+            self.rule_scoring_agent = self.text_model.bind(
+                response_format={"type": "json_object"},
+            ).with_config(
+                agent_trace_config("rule_scoring_agent")
+            )
+            self.rule_scoring_json_agent = None
+            return
         self.rule_scoring_agent = self.create_text_agent(
             "rule_scoring_agent",
             response_format=ToolStrategy(
@@ -1312,12 +1540,44 @@ class RuleScoringAgents(BaseAgents):
                 handle_errors=True,
             ),
         )
+        if self.uses_tool_strategy:
+            self.rule_scoring_json_agent = self.text_model.bind(
+                response_format={"type": "json_object"},
+            ).with_config(
+                agent_trace_config("rule_scoring_agent_json")
+            )
 
     async def ainvoke_rule_scoring(
         self,
         prompt_text: str,
         recursion_limit: int,
     ) -> RuleScoringOutput:
+        try:
+            return await self._ainvoke_structured_agent(
+                agent=self.rule_scoring_agent,
+                agent_name="rule_scoring_agent",
+                response_model=RuleScoringOutput,
+                prompt_text=prompt_text,
+                recursion_limit=recursion_limit,
+            )
+        except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+            if self.rule_scoring_json_agent is None:
+                raise
+            trace_event(
+                "structured_output_format_fallback",
+                agent_name="rule_scoring_agent",
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
+            return await self._ainvoke_structured_agent(
+                agent=self.rule_scoring_json_agent,
+                agent_name="rule_scoring_agent",
+                response_model=RuleScoringOutput,
+                prompt_text=prompt_text,
+                recursion_limit=recursion_limit,
+                force_json_object=True,
+            )
+
         response = await self.rule_scoring_agent.ainvoke(
             {"messages": [HumanMessage(content=prompt_text)]},
             config={"recursion_limit": recursion_limit},

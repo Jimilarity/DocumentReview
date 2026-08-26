@@ -128,6 +128,55 @@ class LegalCitationValidityTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "案由"):
             knowledge._query_text(context, {})
 
+    def test_query_uses_structured_field_from_configured_document(self):
+        context = build_context(
+            法条检索查询={
+                "字段": [
+                    {"文书": "行政处罚决定书", "字段": "违法事实"},
+                    {"文书": "责令改正通知书", "字段": "违法事实"},
+                ]
+            }
+        )
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "structured_fields": [
+                    {
+                        "document_type": "行政处罚决定书",
+                        "section_id": 1,
+                        "field": "违法事实",
+                        "value": "决定书事实",
+                    },
+                    {
+                        "document_type": "责令改正通知书",
+                        "section_id": 2,
+                        "field": "违法事实",
+                        "value": "整改书事实",
+                    },
+                ],
+            }
+        )
+
+        query, _ = knowledge._query_text(context, context.review_item["法条检索查询"])
+
+        self.assertIn("行政处罚决定书的违法事实：决定书事实", query)
+        self.assertIn("责令改正通知书的违法事实：整改书事实", query)
+
+    def test_query_falls_back_to_metadata_when_structured_field_missing(self):
+        context = build_context(
+            法条检索查询={"字段": ["处罚依据"]},
+        )
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "metadata": {**context.metadata, "处罚依据": "元数据依据"},
+            }
+        )
+
+        query, _ = knowledge._query_text(context, context.review_item["法条检索查询"])
+
+        self.assertIn("处罚依据：元数据依据", query)
+
     def test_request_uses_api_key_and_public_url(self):
         class FakeResponse:
             status = 200

@@ -2,7 +2,7 @@ import asyncio
 import sys
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,7 +26,7 @@ from reviewers.context_sensitive import (
     ContextSensitiveReviewExecutor,
     validate_extracted_fields,
 )
-from reviewers.consistency import ConsistencySource
+from reviewers.consistency import CONSISTENCY_TASK, ConsistencySource
 from reviewers.document_mapping import normalize_document_section_map
 from rules.filtering import filter_context_sensitive_rules
 from rules.rule_set import RuleSetBuilder
@@ -524,6 +524,150 @@ class StructuredFieldReadThroughTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DeliveryMappingInputTest(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_existing_mappings_are_repaired_before_cache_write(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = StructuredFieldCache.load(
+                Path(directory) / "structured_fields.json",
+                schema_version=2,
+                source_fingerprint="source-a",
+            )
+            cache.register_section(3, "送达回证")
+            cache.sections["3"] = {
+                "event:1": {
+                    "event_id": 1,
+                    "source_order": 1,
+                    "event_text": "第一次送达",
+                    "related_section_id": 12,
+                },
+                "event:2": {
+                    "event_id": 2,
+                    "source_order": 2,
+                    "event_text": "第二次送达",
+                    "related_section_id": 12,
+                },
+            }
+            cache.section_metadata["3"]["delivery_extraction_completed"] = True
+            executor = ContextSensitiveReviewExecutor.__new__(
+                ContextSensitiveReviewExecutor
+            )
+            executor.logger = MagicMock()
+
+            changed = await executor._prewarm_delivery_receipt(cache, 3, [])
+
+            self.assertTrue(changed)
+            events = cache.delivery_events(3)
+            self.assertEqual(events[0]["related_section_id"], 12)
+            self.assertIsNone(events[1]["related_section_id"])
+
+    async def test_mapping_prefers_nearest_preceding_document_when_name_missing(
+        self,
+    ) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.context_settings = {
+            "service_receipt_document_type": "送达回证",
+        }
+        executor.document_section_map = {
+            "行政处罚决定书": [8],
+            "查封（扣押）决定书": [3],
+            "送达回证": [10],
+        }
+        executor.context = ContextFreeReviewContext(
+            meta_info={},
+            dir_info=[
+                {
+                    "section_id": 3,
+                    "section_name": "查封（扣押）决定书",
+                    "section_page": 1,
+                },
+                {
+                    "section_id": 8,
+                    "section_name": "行政处罚决定书",
+                    "section_page": 2,
+                },
+                {
+                    "section_id": 10,
+                    "section_name": "送达回证",
+                    "section_page": 3,
+                },
+            ],
+            ocr_results=[],
+        )
+
+        related_section_id = await executor._map_delivery_event(
+            10,
+            {"event_id": 1, "event_text": "收件人签名栏"},
+        )
+
+        self.assertEqual(related_section_id, 8)
+
+    async def test_existing_mapping_is_repaired_when_nearer_document_changed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = StructuredFieldCache.load(
+                Path(directory) / "structured_fields.json",
+                schema_version=2,
+                source_fingerprint="source-a",
+            )
+            cache.register_section(13, "送达回证")
+            cache.sections["13"] = {
+                "12": {
+                    "event_id": 1,
+                    "source_order": 1,
+                    "event_text": "送达记录",
+                    "related_section_id": 12,
+                }
+            }
+            cache.section_metadata["13"]["delivery_extraction_completed"] = True
+            executor = ContextSensitiveReviewExecutor.__new__(
+                ContextSensitiveReviewExecutor
+            )
+            executor.context_settings = {
+                "service_receipt_document_type": "送达回证",
+            }
+            executor.document_section_map = {
+                "查封（扣押）决定书": [3],
+                "行政处罚决定书": [8],
+                "送达回证": [13],
+            }
+            executor.context = ContextFreeReviewContext(
+                meta_info={},
+                dir_info=[
+                    {
+                        "section_id": 3,
+                        "section_name": "查封（扣押）决定书",
+                        "section_page": 1,
+                    },
+                    {
+                        "section_id": 8,
+                        "section_name": "行政处罚决定书",
+                        "section_page": 2,
+                    },
+                    {
+                        "section_id": 12,
+                        "section_name": "其他文书",
+                        "section_page": 3,
+                    },
+                    {
+                        "section_id": 13,
+                        "section_name": "送达回证",
+                        "section_page": 4,
+                    },
+                ],
+                ocr_results=[],
+            )
+            executor.logger = MagicMock()
+
+            changed = await executor._prewarm_delivery_receipt(cache, 13, [])
+
+            self.assertTrue(changed)
+            self.assertEqual(
+                cache.delivery_events(13)[0]["related_section_id"],
+                8,
+            )
+
     async def test_retry_may_target_section_used_by_another_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache = StructuredFieldCache.load(
@@ -577,6 +721,47 @@ class DeliveryMappingInputTest(unittest.IsolatedAsyncioTestCase):
                 cache.delivery_events(3)[0]["related_section_id"],
                 1,
             )
+
+    async def test_duplicate_mapping_within_receipt_keeps_later_event_unassociated(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = StructuredFieldCache.load(
+                Path(directory) / "structured_fields.json",
+                schema_version=2,
+                source_fingerprint="source-a",
+            )
+            cache.register_section(3, "送达回证")
+            cache.set_delivery_events(
+                3,
+                [
+                    {
+                        "event_id": 1,
+                        "source_order": 1,
+                        "event_text": "决定书送达记录",
+                        "related_section_id": TECHNICAL_MAPPING_FAILURE,
+                    },
+                    {
+                        "event_id": 2,
+                        "source_order": 2,
+                        "event_text": "决定书再次送达记录",
+                        "related_section_id": TECHNICAL_MAPPING_FAILURE,
+                    },
+                ],
+            )
+            executor = ContextSensitiveReviewExecutor.__new__(
+                ContextSensitiveReviewExecutor
+            )
+            executor._map_delivery_event = AsyncMock(return_value=1)
+            executor.logger = MagicMock()
+
+            changed = await executor._prewarm_delivery_receipt(cache, 3, [])
+
+            self.assertTrue(changed)
+            events = cache.delivery_events(3)
+            self.assertEqual(events[0]["related_section_id"], 1)
+            self.assertIsNone(events[1]["related_section_id"])
+            executor.logger.warning.assert_called_once()
 
     async def test_document_after_receipt_remains_in_full_directory(self) -> None:
         captured = {}
@@ -788,6 +973,303 @@ class PrewarmPlanTest(unittest.TestCase):
 
 
 class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_receipt_group_keeps_only_its_corresponding_document_section(
+        self,
+    ) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.context_settings = {
+            "service_receipt_document_type": "送达回证"
+        }
+        executor.document_section_map = {
+            "行政处罚决定书": [3],
+            "查封（扣押）决定书": [8],
+            "送达回证": [10, 11],
+        }
+        executor._regular_consistency_sources = AsyncMock(
+            side_effect=lambda document_type, field_items, section_ids=None: [
+                ConsistencySource(
+                    document_type=document_type,
+                    section_id=section_id,
+                    field_name=field_items[0]["field"],
+                    required=False,
+                    value=f"document-{section_id}",
+                )
+                for section_id in (
+                    section_ids
+                    or executor.document_section_map[document_type]
+                )
+            ]
+        )
+        executor._delivery_consistency_sources = AsyncMock()
+        rule = {
+            "上下文相关审查事项": [
+                {
+                    "任务": CONSISTENCY_TASK,
+                    "字段": {
+                        "行政处罚决定书": [
+                            {"field": "文号", "required": False}
+                        ],
+                        "查封（扣押）决定书": [
+                            {"field": "文号", "required": False}
+                        ],
+                        "送达回证": [
+                            {"field": "送达文书文号", "required": False}
+                        ],
+                    },
+                }
+            ]
+        }
+        executor._delivery_consistency_sources.side_effect = [
+            [
+                ConsistencySource(
+                    document_type="送达回证",
+                    section_id=10,
+                    related_section_id=3,
+                    field_name="送达文书文号",
+                    required=False,
+                    value="receipt-3",
+                )
+            ],
+            [
+                ConsistencySource(
+                    document_type="送达回证",
+                    section_id=11,
+                    related_section_id=8,
+                    field_name="送达文书文号",
+                    required=False,
+                    value="receipt-8",
+                )
+            ],
+        ]
+
+        groups = await executor.collect_consistency_source_groups(rule, 0)
+
+        self.assertEqual(
+            [
+                [source.section_id for source in group if source.document_type != "送达回证"]
+                for group in groups
+            ],
+            [[3], [8]],
+        )
+
+    async def test_receipt_sources_are_grouped_by_the_only_regular_document(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.context_settings = {
+            "service_receipt_document_type": "送达回证"
+        }
+        executor.document_section_map = {
+            "行政处罚决定书": [3, 8],
+            "送达回证": [10, 11],
+        }
+        executor._regular_consistency_sources = AsyncMock(
+            side_effect=lambda document_type, field_items, section_ids=None: [
+                ConsistencySource(
+                    document_type=document_type,
+                    section_id=section_id,
+                    field_name=field_items[0]["field"],
+                    required=False,
+                    value=f"document-{section_id}",
+                )
+                for section_id in (section_ids or [3, 8])
+            ]
+        )
+        executor._delivery_consistency_sources = AsyncMock(
+            side_effect=lambda document_type, field_items, related_section_ids=None: [
+                ConsistencySource(
+                    document_type=document_type,
+                    section_id=10 + next(iter(related_section_ids)),
+                    related_section_id=next(iter(related_section_ids)),
+                    field_name=field_items[0]["field"],
+                    required=False,
+                    value=f"receipt-{next(iter(related_section_ids))}",
+                )
+            ]
+        )
+        rule = {
+            "上下文相关审查事项": [
+                {
+                    "任务": CONSISTENCY_TASK,
+                    "字段": {
+                        "行政处罚决定书": [
+                            {"field": "文号", "required": False}
+                        ],
+                        "送达回证": [
+                            {"field": "送达文书文号", "required": False}
+                        ],
+                    },
+                }
+            ]
+        }
+
+        groups = await executor.collect_consistency_source_groups(rule, 0)
+
+        self.assertEqual(
+            [[source.related_section_id for source in group] for group in groups],
+            [[None, 3], [None, 8]],
+        )
+
+    def test_field_category_accepts_three_values_and_rejects_others(self) -> None:
+        field_items = [
+            {"field": "当事人信息", "required": True, "字段类别": category}
+            for category in ["审查对象", "判断支撑", "结果核对"]
+        ]
+
+        self.assertEqual(
+            ContextSensitiveReviewExecutor._validate_field_items(
+                "行政处罚决定书",
+                field_items,
+            ),
+            field_items,
+        )
+        with self.assertRaisesRegex(ValueError, "字段类别"):
+            ContextSensitiveReviewExecutor._validate_field_items(
+                "行政处罚决定书",
+                [
+                    {
+                        "field": "当事人信息",
+                        "required": True,
+                        "字段类别": "其他",
+                    }
+                ],
+            )
+
+    async def test_field_category_is_included_in_model_sources(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        agent = SimpleNamespace(
+            build_task_prompt=MagicMock(return_value="prompt"),
+            ainvoke_consistency_review=AsyncMock(
+                return_value=SimpleNamespace(
+                    consistent=True,
+                    reason="一致",
+                )
+            ),
+        )
+        executor.require_context_sensitive_agents = lambda: agent
+        executor.settings = SimpleNamespace(
+            agent_recursion_limit=10,
+            task_timeout_seconds=5,
+        )
+
+        await executor._consistency_judgement(
+            {"审查事项": "核对当事人"},
+            [
+                ConsistencySource(
+                    document_type="案件调查报告",
+                    section_id=3,
+                    field_name="违法事实",
+                    required=True,
+                    value="某违法行为",
+                    field_category="判断支撑",
+                )
+            ],
+            [],
+        )
+
+        sources = agent.build_task_prompt.call_args.kwargs["sources"]
+        self.assertIn('"field_category":"判断支撑"', sources)
+
+    async def test_generic_context_task_uses_categorized_prompt(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        source = ConsistencySource(
+            document_type="行政处罚决定书",
+            section_id=8,
+            field_name="当事人信息",
+            required=False,
+            value=[{"当事人名称": "甲公司"}],
+            field_category="结果核对",
+        )
+        executor.collect_consistency_sources = AsyncMock(
+            return_value=[source]
+        )
+        executor.collect_external_knowledge = AsyncMock(return_value=[])
+        agent = SimpleNamespace(
+            build_task_prompt=MagicMock(return_value="prompt"),
+            ainvoke_contextual_legality_review=AsyncMock(
+                return_value=SimpleNamespace(issues=[])
+            ),
+        )
+        executor.require_context_sensitive_agents = lambda: agent
+        executor.settings = SimpleNamespace(agent_recursion_limit=10)
+        rule = {
+            "上下文相关审查事项": [
+                {
+                    "任务": "事实清楚、证据充分",
+                    "字段": {},
+                    "审查事项": "审查当事人是否适格",
+                }
+            ]
+        }
+
+        result = await executor.run_contextual_legality_item(rule, 0)
+
+        self.assertEqual(result, {"issues": []})
+        self.assertEqual(
+            agent.build_task_prompt.call_args.args[0],
+            "categorized_contextual_review",
+        )
+        self.assertIn(
+            '"field_category": "结果核对"',
+            agent.build_task_prompt.call_args.kwargs["sources"],
+        )
+
+    async def test_generic_context_task_reports_only_missing_required_fields(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.collect_consistency_sources = AsyncMock(
+            return_value=[
+                ConsistencySource(
+                    document_type="案件调查报告",
+                    section_id=3,
+                    field_name="违法事实",
+                    required=True,
+                    value=None,
+                    field_category="判断支撑",
+                ),
+                ConsistencySource(
+                    document_type="行政处罚决定书",
+                    section_id=8,
+                    field_name="处罚具体内容",
+                    required=False,
+                    value=None,
+                    field_category="结果核对",
+                ),
+            ]
+        )
+        executor.collect_external_knowledge = AsyncMock(return_value=[])
+        agent = SimpleNamespace(
+            build_task_prompt=MagicMock(return_value="prompt"),
+            ainvoke_contextual_legality_review=AsyncMock(
+                return_value=SimpleNamespace(issues=[])
+            ),
+        )
+        executor.require_context_sensitive_agents = lambda: agent
+        executor.settings = SimpleNamespace(agent_recursion_limit=10)
+
+        result = await executor.run_contextual_legality_item(
+            {
+                "上下文相关审查事项": [
+                    {
+                        "任务": "上下文合法性审查",
+                        "字段": {},
+                        "审查事项": "审查当事人是否适格",
+                    }
+                ]
+            },
+            0,
+        )
+
+        self.assertEqual(len(result["issues"]), 1)
+        self.assertIn("违法事实", result["issues"][0]["content"])
+
     async def test_different_field_names_use_one_agent_judgement(self) -> None:
         executor = ContextSensitiveReviewExecutor.__new__(
             ContextSensitiveReviewExecutor

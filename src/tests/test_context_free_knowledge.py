@@ -54,6 +54,24 @@ class ContextFreeKnowledgePromptTest(unittest.TestCase):
         self.assertNotIn("可能来自向量相似度召回", prompt)
         self.assertNotIn("仅表示可能相关", prompt)
 
+    def test_delivery_scope_is_added_to_receipt_review_prompt(self) -> None:
+        state = self.build_state([])
+        state.update(
+            {
+                "document_name": "送达回证",
+                "delivery_scope": (
+                    '{"目标文书":"行政处罚决定书",'
+                    '"本回证中仅审查的送达事件":[{"event_id":2}]}'
+                ),
+            }
+        )
+
+        prompt = self.build_executor().build_rule_prompt(state)
+
+        self.assertIn("<delivery_scope>", prompt)
+        self.assertIn("event_id", prompt)
+        self.assertIn("仅审查", prompt)
+
     def test_review_item_knowledge_names_are_optional_and_deduplicated(
         self,
     ) -> None:

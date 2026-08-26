@@ -189,15 +189,34 @@ class ResultProcessingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("上一次结构化结果未通过程序校验", retry_prompt)
 
 
-class PostReviewAgentsConfigurationTest(unittest.TestCase):
+class PostReviewAgentsConfigurationTest(unittest.IsolatedAsyncioTestCase):
     def test_uses_tool_strategy_and_disables_thinking(self) -> None:
-        with patch.object(BaseAgents, "__init__", return_value=None) as init:
+        text_model = Mock()
+
+        with patch.dict(
+            os.environ,
+            {
+                "REVIEW_RESPONSE_FORMAT_MODE": "tool_strategy",
+                "REVIEW_ENABLE_THINKING": "false",
+            },
+        ):
             with patch.object(
-                PostReviewAgents,
-                "create_text_agent",
-                return_value=object(),
-            ) as create_agent:
-                PostReviewAgents()
+                BaseAgents,
+                "__init__",
+                return_value=None,
+            ) as init:
+                with patch.object(
+                    PostReviewAgents,
+                    "text_model",
+                    text_model,
+                    create=True,
+                ):
+                    with patch.object(
+                        PostReviewAgents,
+                        "create_text_agent",
+                        return_value=object(),
+                    ) as create_agent:
+                        PostReviewAgents()
 
         init.assert_called_once_with(
             text_parallel_tool_calls=False,
@@ -206,6 +225,53 @@ class PostReviewAgentsConfigurationTest(unittest.TestCase):
         )
         response_format = create_agent.call_args.kwargs["response_format"]
         self.assertIsInstance(response_format, ToolStrategy)
+
+    def test_uses_json_object_from_environment(self) -> None:
+        text_model = Mock()
+
+        with patch.dict(
+            os.environ,
+            {
+                "REVIEW_RESPONSE_FORMAT_MODE": "json_object",
+                "REVIEW_ENABLE_THINKING": "false",
+            },
+        ):
+            with patch.object(
+                BaseAgents,
+                "__init__",
+                return_value=None,
+            ):
+                with patch.object(
+                    PostReviewAgents,
+                    "text_model",
+                    text_model,
+                    create=True,
+                ):
+                    PostReviewAgents()
+
+        text_model.bind.assert_called_once_with(
+            response_format={"type": "json_object"},
+        )
+
+    async def test_tool_strategy_falls_back_to_json_object(self) -> None:
+        agents = object.__new__(PostReviewAgents)
+        agents.response_format_mode = agents.TOOL_STRATEGY_MODE
+        agents.result_processor_agent = object()
+        agents.result_processor_json_agent = object()
+        expected = ReviewResultProcessingOutput(findings=[])
+        agents._ainvoke_structured_agent = AsyncMock(
+            side_effect=[TypeError("invalid tool arguments"), expected]
+        )
+
+        result = await agents.ainvoke_result_processing("prompt", 20)
+
+        self.assertIs(result, expected)
+        self.assertEqual(
+            agents._ainvoke_structured_agent.await_args_list[1].kwargs[
+                "force_json_object"
+            ],
+            True,
+        )
 
     def test_max_tries_is_loaded_from_environment(self) -> None:
         with patch.dict(

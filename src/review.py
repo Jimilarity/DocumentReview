@@ -649,6 +649,28 @@ async def run_review(
             else "disabled"
         ),
     }
+    receipt_document_type = load_context_sensitive_settings().get(
+        "service_receipt_document_type",
+        "送达回证",
+    )
+    context_free_receipt_rules = (
+        rule_sets.get(ReviewExecutorType.CONTEXT_FREE, RuleSet(rules=[])).rules
+        if ReviewExecutorType.CONTEXT_FREE in rule_sets
+        else []
+    )
+    needs_delivery_preparation = any(
+        receipt_document_type in (rule.get("上下文无关审查事项") or {})
+        and len(rule.get("上下文无关审查事项") or {}) > 1
+        for rule in context_free_receipt_rules
+    )
+    if needs_delivery_preparation:
+        delivery_preparer = ContextSensitiveReviewExecutor(
+            file_path=file_path,
+            rule_set=RuleSet(rules=[]),
+            document_section_map=document_section_map,
+            settings=settings,
+        )
+        await delivery_preparer.run_preparation()
     for executor_type in document_types:
         if not executable_indexes[executor_type]:
             continue

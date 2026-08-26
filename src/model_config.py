@@ -28,9 +28,13 @@ def _get_model_rate_limiter() -> InMemoryRateLimiter | None:
     return _MODEL_RATE_LIMITER
 
 
-def _transport_options(*, timeout_seconds: int = _MODEL_TIMEOUT_SECONDS) -> dict:
+def _transport_options(
+    *,
+    timeout_seconds: int = _MODEL_TIMEOUT_SECONDS,
+    max_retries: int = _MODEL_MAX_RETRIES,
+) -> dict:
     options = {
-        "max_retries": _MODEL_MAX_RETRIES,
+        "max_retries": max_retries,
         "timeout": timeout_seconds,
     }
     rate_limiter = _get_model_rate_limiter()
@@ -63,7 +67,17 @@ def build_vision_model(
         extra_body=extra_body,
         callbacks=[AGENT_TRACE_CALLBACK],
         tags=["model:vision"],
-        **_transport_options(timeout_seconds=_VISION_MODEL_TIMEOUT_SECONDS),
+        **_transport_options(
+            timeout_seconds=int(
+                os.getenv(
+                    "REVIEW_VISION_TIMEOUT",
+                    str(_VISION_MODEL_TIMEOUT_SECONDS),
+                )
+            ),
+            max_retries=int(
+                os.getenv("REVIEW_VISION_MAX_RETRIES", str(_MODEL_MAX_RETRIES))
+            ),
+        ),
     )
 
 

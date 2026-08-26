@@ -769,6 +769,24 @@
     type: "list[dict]"
     notes: "委托书中的委托人信息"
 
+证件信息:
+  证件类型:
+    eng_name: "doc_type"
+    type: "str"
+    notes: null
+  证件当事人名称:
+    eng_name: "doc_subject_name"
+    type: "str"
+    notes: null
+  证件号码:
+    eng_name: "doc_card_no"
+    type: "str"
+    notes: null
+  个体工商户组织形式:
+    eng_name: "object_business_form"
+    type: "str"
+    notes: null
+
 取证记录信息:
   执法主体名称:
     eng_name: "subject_name"
@@ -786,6 +804,18 @@
     eng_name: "evidence_content"
     type: "str"
     notes: null
+  记录类型:
+    eng_name: "record_type"
+    type: "str"
+    notes: null
+  记录标题:
+    eng_name: "record_title"
+    type: "str"
+    notes: null
+  附件照片:
+    eng_name: "photo_attachment"
+    type: "list[dict]"
+    notes: null
 
 调查审批信息:
   执法主体名称:
@@ -800,6 +830,42 @@
     eng_name: "party_info"
     type: "list[dict]"
     notes: null
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  违法事实:
+    eng_name: "violation_facts"
+    type: "str"
+    notes: null
+  证据种类:
+    eng_name: "evidence_categories"
+    type: "list[str]"
+    notes: null
+  其他证据:
+    eng_name: "other_evidence"
+    type: "str"
+    notes: null
+  违法依据:
+    eng_name: "violation_basis"
+    type: "str"
+    notes: null
+  拟处罚依据:
+    eng_name: "penalty_basis"
+    type: "str"
+    notes: null
+  处罚类别:
+    eng_name: "penalty_category"
+    type: "str"
+    notes: null
+  处罚内容:
+    eng_name: "penalty_content"
+    type: "str"
+    notes: null
+  处罚具体内容:
+    eng_name: "penalty_info"
+    type: "list[dict]"
+    notes: null
 
 案件调查报告:
   执法主体名称:
@@ -809,6 +875,26 @@
   当事人信息:
     eng_name: "party_info"
     type: "list[dict]"
+    notes: null
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  违法事实:
+    eng_name: "violation_facts"
+    type: "str"
+    notes: null
+  调查证据:
+    eng_name: "invest_evidence"
+    type: "str"
+    notes: null
+  违法依据:
+    eng_name: "violation_basis"
+    type: "str"
+    notes: null
+  处罚依据:
+    eng_name: "penalty_basis"
+    type: "str"
     notes: null
 
 整改复查意见书:
@@ -824,6 +910,18 @@
     eng_name: "party_info"
     type: "list[dict]"
     notes: null
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  复查结果:
+    eng_name: "review_result"
+    type: "str"
+    notes: null
+  复查意见:
+    eng_name: "review_opinion"
+    type: "str"
+    notes: null
 
 行政处罚事先（听证）告知书:
   执法主体名称:
@@ -832,6 +930,38 @@
     notes: null
   当事人信息:
     eng_name: "party_info"
+    type: "list[dict]"
+    notes: null
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  违法事实:
+    eng_name: "violation_facts"
+    type: "str"
+    notes: null
+  证据种类:
+    eng_name: "evidence_categories"
+    type: "list[str]"
+    notes: null
+  其他证据:
+    eng_name: "other_evidence"
+    type: "str"
+    notes: null
+  违法依据:
+    eng_name: "violation_basis"
+    type: "str"
+    notes: null
+  处罚依据:
+    eng_name: "penalty_basis"
+    type: "str"
+    notes: null
+  拟处罚决定:
+    eng_name: "proposed_penalty_decision"
+    type: "str"
+    notes: null
+  处罚具体内容:
+    eng_name: "penalty_info"
     type: "list[dict]"
     notes: null
 
@@ -906,6 +1036,34 @@
     eng_name: "party_info"
     type: "list[dict]"
     notes: null
+  案由:
+    eng_name: "case_cause"
+    type: "str"
+    notes: null
+  违法事实:
+    eng_name: "violation_facts"
+    type: "str"
+    notes: null
+  违法证据:
+    eng_name: "illegal_evidence"
+    type: "str"
+    notes: null
+  违法依据:
+    eng_name: "violation_basis"
+    type: "str"
+    notes: null
+  处罚依据:
+    eng_name: "penalty_basis"
+    type: "str"
+    notes: null
+  处罚内容:
+    eng_name: "penalty_content"
+    type: "str"
+    notes: null
+  处罚具体内容:
+    eng_name: "penalty_info"
+    type: "list[dict]"
+    notes: null
 
 简易程序备案记录:
   执法主体名称:
@@ -953,6 +1111,28 @@
   当事人信息:
     eng_name: "party_info"
     type: "list[dict]"
+    notes: null
+
+处罚信息表:
+  处罚的类型:
+    eng_name: "penalty_type"
+    type: "str"
+    notes: null
+  具体事项:
+    eng_name: "penalty_content"
+    type: "str"
+    notes: null
+  金额小写:
+    eng_name: "penalty_amount_number"
+    type: "float"
+    notes: null
+  处罚期限开始时间:
+    eng_name: "penalty_period_start"
+    type: "datetime"
+    notes: null
+  处罚期限结束时间:
+    eng_name: "penalty_period_end"
+    type: "datetime"
     notes: null
 
 集体讨论笔录:

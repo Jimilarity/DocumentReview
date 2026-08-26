@@ -50,6 +50,14 @@ def extract_sections_ocr_text(
             f"[page_index={page_index}]\n{ocr_by_page[page_index]}"
             for page_index in range(start_page, end_page)
         ]
+        catalog_source = str(
+            section.get("catalog_source") or "original"
+        )
+        metadata_source = (
+            "ocr_segmentation"
+            if catalog_source == "ocr_segmented"
+            else "case_directory"
+        )
         section_texts.append(
             "\n".join(
                 [
@@ -57,7 +65,7 @@ def extract_sections_ocr_text(
                         "[directory_metadata: "
                         f"section_id={section_id}, "
                         f"section_name={section['section_name']}, "
-                        "source=case_directory, is_page_title=false]"
+                        f"source={metadata_source}, is_page_title=false]"
                     ),
                     *page_texts,
                 ]

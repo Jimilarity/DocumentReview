@@ -8,3 +8,8 @@ compatible_document_type_groups:
     - 有关部门保管的书证复制件、影印件、抄录件
     - 计算机数据、录音、录像、图片等证据材料
     - 域外及港澳台形成的证据
+
+excluded_section_title_keywords:
+  证件信息:
+    - 执法证
+    - 法律职业资格证书

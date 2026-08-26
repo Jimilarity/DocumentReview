@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from cache_paths import (
     get_cache_paths,
     get_result_directory,
 )
+from constants import NO_CATALOG_SEGMENTATION_SCHEMA_VERSION
+from main import _pre_review_cache_is_reusable
+from utils import atomic_write_json
 
 
 class ResultPathTest(unittest.TestCase):
@@ -68,6 +72,35 @@ class ResultPathTest(unittest.TestCase):
             paths.structured_fields.name,
             "structured_fields.json",
         )
+
+    def test_old_no_catalog_segmentation_cache_is_not_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = get_cache_paths(
+                Path("tenant-a") / "case.pdf",
+                cache_root=directory,
+            )
+            paths.cache_directory.mkdir(parents=True)
+            for path in (
+                paths.image_list,
+                paths.ocr_results,
+                paths.metadata,
+            ):
+                atomic_write_json(path, [])
+            atomic_write_json(paths.directory, [{
+                "section_id": 1,
+                "catalog_source": "ocr_segmented",
+            }])
+
+            self.assertFalse(_pre_review_cache_is_reusable(paths))
+
+            atomic_write_json(paths.directory, [{
+                "section_id": 1,
+                "catalog_source": "ocr_segmented",
+                "segmentation_schema_version": (
+                    NO_CATALOG_SEGMENTATION_SCHEMA_VERSION
+                ),
+            }])
+            self.assertTrue(_pre_review_cache_is_reusable(paths))
 
 
 if __name__ == "__main__":

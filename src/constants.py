@@ -66,7 +66,11 @@ SCORED_RAW_REVIEW_RESULT_FILENAME = "raw_review_results_scored.json"
 REVIEW_RESULT_PROCESSING_FILENAME = "review_result_processing.json"
 STRUCTURED_FIELD_CACHE_FILENAME = "structured_fields.json"
 STRUCTURED_FIELD_CACHE_SCHEMA_VERSION = 6
+NO_CATALOG_SEGMENTATION_SCHEMA_VERSION = 2
 SECTION_FIELDS_PATH = PROJECT_ROOT / "src" / "config" / "section_fields.yaml"
+GENERATED_CONTEXT_SECTION_FIELDS_PATH = (
+    PROJECT_ROOT / "src" / "config" / "generated_context_section_fields.yaml"
+)
 CONTEXT_SENSITIVE_CONFIG_PATH = (
     PROJECT_ROOT / "src" / "config" / "context_sensitive.yaml"
 )

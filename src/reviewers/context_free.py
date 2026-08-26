@@ -5,7 +5,7 @@ from typing import Any, Dict, List, TypedDict
 from langgraph.graph import END, StateGraph
 from langgraph.types import RunnableConfig
 
-from agents import ContextFreeReviewAgents
+from agents import ContextFreeReviewAgents, ContextSensitiveReviewAgents
 from constants import ErrorCode
 from external_knowledge import (
     KnowledgeContext,
@@ -30,6 +30,12 @@ from .result_aggregation import (
     aggregate_section_results,
 )
 from tools import inspect_current_section_images
+from constants import STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
+from review_config import load_context_sensitive_settings
+from structured_field_cache import (
+    StructuredFieldCache,
+    build_structured_source_fingerprint,
+)
 from rules.filtering import (
     context_free_document_names,
     filter_context_free_rules,
@@ -46,6 +52,7 @@ class ContextFreeSingleRuleState(SingleRuleState, total=False):
     document_review_rule: Dict[str, Any]
     section_id: int
     ocr_text: str
+    delivery_scope: str
     external_knowledge: List[KnowledgeItem]
 
 
@@ -67,6 +74,9 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
+        self.structured_field_cache: StructuredFieldCache | None = None
+        self._query_field_cache: Dict[tuple[int, str], Any] = {}
+        self._query_field_agents: ContextSensitiveReviewAgents | None = None
         self.knowledge_service = knowledge_service or KnowledgeService(
             logger=self.logger
         )
@@ -90,6 +100,123 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
 
     def require_context_free_context(self) -> ContextFreeReviewContext:
         return self.require_document_context()
+
+    def _load_structured_field_cache(self) -> StructuredFieldCache | None:
+        if self.structured_field_cache is not None:
+            return self.structured_field_cache
+        context = self.require_context_free_context()
+        try:
+            fingerprint = build_structured_source_fingerprint(
+                context.meta_info,
+                context.dir_info,
+                context.ocr_results,
+            )
+            cache = StructuredFieldCache.load(
+                self.cache_paths.structured_fields,
+                schema_version=STRUCTURED_FIELD_CACHE_SCHEMA_VERSION,
+                source_fingerprint=fingerprint,
+            )
+        except (FileNotFoundError, ValueError, TypeError):
+            return None
+        self.structured_field_cache = cache
+        return cache
+
+    def _receipt_section_ids_for_rule(
+        self,
+        rule: Dict[str, Any],
+        available_documents: Dict[str, Dict[str, Any]],
+    ) -> List[int]:
+        receipt_document_type = "送达回证"
+        if receipt_document_type not in available_documents:
+            return self.document_section_map.get(
+                receipt_document_type,
+                [],
+            )
+        document_review_rule = available_documents[receipt_document_type]
+        anchor_document_type = document_review_rule.get(
+            "送达回证关联文书"
+        )
+        ordinary_document_types = [
+            document_name
+            for document_name in available_documents
+            if document_name != receipt_document_type
+        ]
+        if not anchor_document_type and len(ordinary_document_types) == 1:
+            anchor_document_type = ordinary_document_types[0]
+        if not isinstance(anchor_document_type, str):
+            return []
+        target_section_ids = set(
+            self.document_section_map.get(anchor_document_type, [])
+        )
+        cache = self._load_structured_field_cache()
+        receipt_section_ids = list(
+            self.document_section_map.get(receipt_document_type, [])
+        )
+        if not target_section_ids or not receipt_section_ids:
+            return []
+        matching_receipt_sections = []
+        if cache is not None:
+            for receipt_section_id in receipt_section_ids:
+                matching_events = [
+                    event
+                    for event in cache.delivery_events(receipt_section_id)
+                    if event.get("related_section_id") in target_section_ids
+                ]
+                if matching_events:
+                    matching_receipt_sections.append(receipt_section_id)
+
+        return sorted(set(matching_receipt_sections))
+
+    def _delivery_scope_for_section(
+        self,
+        available_documents: Dict[str, Dict[str, Any]],
+        receipt_section_id: int,
+    ) -> str:
+        receipt_document_type = "送达回证"
+        receipt_rule = available_documents.get(receipt_document_type) or {}
+        anchor_document_type = receipt_rule.get("送达回证关联文书")
+        ordinary_document_types = [
+            document_name
+            for document_name in available_documents
+            if document_name != receipt_document_type
+        ]
+        if not isinstance(anchor_document_type, str):
+            if len(ordinary_document_types) != 1:
+                return ""
+            anchor_document_type = ordinary_document_types[0]
+        target_section_ids = set(
+            self.document_section_map.get(anchor_document_type, [])
+        )
+        cache = self._load_structured_field_cache()
+        if cache is None:
+            return ""
+        events = [
+            event
+            for event in cache.delivery_events(receipt_section_id)
+            if event.get("related_section_id") in target_section_ids
+        ]
+        if not events:
+            return ""
+        return json.dumps(
+            {
+                "目标文书": anchor_document_type,
+                "目标文书section_ids": sorted(target_section_ids),
+                "本回证中仅审查的送达事件": [
+                    {
+                        "event_id": event["event_id"],
+                        "source_order": event["source_order"],
+                        "related_section_id": event["related_section_id"],
+                    }
+                    for event in events
+                ],
+                "处理要求": (
+                    "送达回证可能包含多个送达事件；只审查上述事件对应的目标文书，"
+                    "忽略同一回证中发送给其他文书的事件。"
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     def document_names(self) -> List[str]:
         return list(
@@ -126,6 +253,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         document_name: str,
         document_review_rule: Dict[str, Any],
         section_id: int,
+        delivery_scope: str = "",
     ) -> ContextFreeSingleRuleState:
         context = self.require_context_free_context()
         ocr_text = extract_section_ocr_text(
@@ -141,6 +269,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
             "document_review_rule": document_review_rule,
             "section_id": section_id,
             "ocr_text": ocr_text,
+            "delivery_scope": delivery_scope,
             "external_knowledge": [],
         }
 
@@ -158,6 +287,143 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
             raise TypeError("外部知识必须是由非空知识函数名称组成的数组")
         return list(dict.fromkeys(name.strip() for name in configured))
 
+    @staticmethod
+    def _query_field_references(
+        document_review_rule: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        config = document_review_rule.get("法条检索查询") or {}
+        if not isinstance(config, dict):
+            raise TypeError("法条检索查询必须是对象")
+        fields = config.get("字段", [])
+        if not isinstance(fields, list):
+            raise TypeError("法条检索查询.字段必须是数组")
+        references = []
+        for item in fields:
+            if isinstance(item, str) and item.strip():
+                references.append({"字段": item.strip()})
+            elif isinstance(item, dict):
+                field_name = item.get("字段")
+                document_name = item.get("文书")
+                if not isinstance(field_name, str) or not field_name.strip():
+                    raise TypeError("法条检索查询.字段对象必须包含非空字段")
+                if document_name is not None and not isinstance(
+                    document_name, str
+                ):
+                    raise TypeError("法条检索查询.字段对象的文书必须是字符串")
+                references.append(
+                    {
+                        "字段": field_name.strip(),
+                        **(
+                            {"文书": document_name.strip()}
+                            if isinstance(document_name, str)
+                            and document_name.strip()
+                            else {}
+                        ),
+                    }
+                )
+            else:
+                raise TypeError("法条检索查询.字段必须由字符串或对象组成")
+        return references
+
+    async def _extract_query_fields(
+        self,
+        document_review_rule: Dict[str, Any],
+        current_document_name: str,
+        current_section_id: int,
+    ) -> List[Dict[str, Any]]:
+        references = self._query_field_references(document_review_rule)
+        if not references:
+            return []
+        context = self.require_context_free_context()
+        settings = load_context_sensitive_settings()
+        targets: Dict[str, set[int]] = {}
+        for reference in references:
+            document_name = reference.get("文书", current_document_name)
+            section_ids = (
+                [current_section_id]
+                if document_name == current_document_name
+                else self.document_section_map.get(document_name, [])
+            )
+            for section_id in section_ids:
+                targets.setdefault(document_name, set()).add(section_id)
+        if self._query_field_agents is None:
+            self._query_field_agents = ContextSensitiveReviewAgents()
+        results: List[Dict[str, Any]] = []
+        for document_name, section_ids in targets.items():
+            field_names = [
+                reference["字段"]
+                for reference in references
+                if reference.get("文书", current_document_name)
+                == document_name
+            ]
+            document_specs = settings["field_specs"].get(document_name, {})
+            missing = [
+                field_name
+                for field_name in field_names
+                if field_name not in document_specs
+            ]
+            if missing:
+                raise ValueError(
+                    f"文书类型 {document_name} 缺少字段配置: {missing}"
+                )
+            field_specs = {
+                field_name: document_specs[field_name]
+                for field_name in dict.fromkeys(field_names)
+            }
+            prompt_specs = [
+                {"field": field_name, "type": spec["type"]}
+                for field_name, spec in field_specs.items()
+            ]
+            for section_id in sorted(section_ids):
+                values = {}
+                missing_fields = [
+                    field_name
+                    for field_name in field_specs
+                    if (section_id, field_name) not in self._query_field_cache
+                ]
+                if missing_fields:
+                    result = await self._query_field_agents.ainvoke_section_field_extractor(
+                        self._query_field_agents.build_task_prompt(
+                            "section_field_extraction",
+                            document_type=document_name,
+                            field_specs=json.dumps(
+                                [
+                                    {
+                                        "field": field_name,
+                                        "type": field_specs[field_name]["type"],
+                                    }
+                                    for field_name in missing_fields
+                                ],
+                                ensure_ascii=False,
+                            ),
+                            ocr_text=extract_section_ocr_text(
+                                section_id,
+                                context.dir_info,
+                                context.ocr_results,
+                            ),
+                        ),
+                        self.settings.agent_recursion_limit,
+                    )
+                    for field_name in missing_fields:
+                        self._query_field_cache[(section_id, field_name)] = (
+                            result.fields.get(field_name)
+                        )
+                for field_name in field_specs:
+                    values[field_name] = self._query_field_cache.get(
+                        (section_id, field_name)
+                    )
+                results.extend(
+                    {
+                        "document_type": document_name,
+                        "section_id": section_id,
+                        "field": field_name,
+                        "value": value,
+                    }
+                    for field_name, value in values.items()
+                    if value not in (None, "")
+                )
+        return results
+
     async def collect_external_knowledge(
         self,
         state: ContextFreeSingleRuleState,
@@ -167,6 +433,11 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         )
         if not function_names:
             return []
+        structured_fields = await self._extract_query_fields(
+            state["document_review_rule"],
+            state["document_name"],
+            state["section_id"],
+        )
         return await self.knowledge_service.collect(
             function_names,
             KnowledgeContext(
@@ -177,6 +448,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
                 document_name=state["document_name"],
                 section_id=state["section_id"],
                 section_ocr=state["ocr_text"],
+                structured_fields=structured_fields,
             ),
         )
 
@@ -202,6 +474,14 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
             section_id=state["section_id"],
             ocr_text=state["ocr_text"],
         )
+        delivery_scope = state.get("delivery_scope", "")
+        if delivery_scope:
+            prompt = (
+                f"{prompt}\n\n"
+                "<delivery_scope>\n"
+                f"{delivery_scope}\n"
+                "</delivery_scope>"
+            )
         knowledge_items = state.get("external_knowledge", [])
         if not knowledge_items:
             return prompt
@@ -272,6 +552,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         document_review_rule: Dict[str, Any],
         section_id: int,
         config: RunnableConfig,
+        delivery_scope: str = "",
     ) -> Dict[str, Any]:
         rule = self.rules[index]
         rule_token = CURRENT_RULE_INDEX.set(self.rule_identifier(rule, index))
@@ -287,6 +568,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
                     document_name,
                     document_review_rule,
                     section_id,
+                    delivery_scope,
                 )
                 single_rule_input["external_knowledge"] = (
                     await self.collect_external_knowledge(single_rule_input)
@@ -351,6 +633,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
             document_name: str,
             document_rule: Dict[str, Any],
             section_id: int,
+            delivery_scope: str = "",
         ) -> Dict[str, Any]:
             async with semaphore:
                 return await self.run_one_section(
@@ -359,18 +642,37 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
                     document_rule,
                     section_id,
                     config,
+                    delivery_scope,
                 )
 
         component_results = []
         for document_name, document_rule in available_documents.items():
+            section_ids = (
+                self._receipt_section_ids_for_rule(
+                    rule,
+                    available_documents,
+                )
+                if document_name == "送达回证"
+                else self.document_section_map[document_name]
+            )
+            if not section_ids:
+                continue
             section_results = await asyncio.gather(
                 *(
                     run_section(
                         document_name,
                         document_rule,
                         section_id,
+                        (
+                            self._delivery_scope_for_section(
+                                available_documents,
+                                section_id,
+                            )
+                            if document_name == "送达回证"
+                            else ""
+                        ),
                     )
-                    for section_id in self.document_section_map[document_name]
+                    for section_id in section_ids
                 )
             )
             component_results.append(

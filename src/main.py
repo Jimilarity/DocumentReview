@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parents[1] / '.env'
 load_dotenv(env_path)
 
-from constants import ErrorCode, RESULT_ROOT
+from constants import (
+    ErrorCode,
+    NO_CATALOG_SEGMENTATION_SCHEMA_VERSION,
+    RESULT_ROOT,
+)
 from cache_paths import get_cache_paths, get_result_directory
 from post_review import run_post_review
 from pre_review import run_pre_review
@@ -23,7 +27,32 @@ from errors.exceptions import (
     ReviewError,
 )
 from errors.handler import capture_error, write_error_report
+from utils import read_json
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
+
+
+def _pre_review_cache_is_reusable(cache_paths) -> bool:
+    if not all(path.is_file() for path in cache_paths.pre_review_files.values()):
+        return False
+    try:
+        directory = read_json(cache_paths.directory)
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(directory, list):
+        return False
+    segmented_items = [
+        item
+        for item in directory
+        if isinstance(item, dict)
+        and item.get("catalog_source") == "ocr_segmented"
+    ]
+    if not segmented_items:
+        return True
+    return all(
+        item.get("segmentation_schema_version")
+        == NO_CATALOG_SEGMENTATION_SCHEMA_VERSION
+        for item in segmented_items
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,7 +110,7 @@ async def main(
                 input_path,
                 rule_type,
             )
-        elif all(path.is_file() for path in cache_files.values()):
+        elif _pre_review_cache_is_reusable(cache_paths):
             print("预处理缓存完整，跳过预处理步骤")
             pre_review_result = {
                 "skipped": True,

@@ -12,10 +12,25 @@ from pre_review import (
     _needs_ocr_fallback,
     _ocr_substantive_character_count,
     _prefer_retry_ocr,
+    _route_after_case_metadata,
 )
 
 
 class PreReviewOcrFallbackTest(unittest.TestCase):
+    def test_seeded_ocr_skips_document_ocr_stage(self) -> None:
+        state = {"document_ocr_results": [{"image_index": 0}]}
+
+        self.assertEqual(
+            _route_after_case_metadata(state),
+            "save_document_ocr_results",
+        )
+
+    def test_unseeded_ocr_runs_document_ocr_stage(self) -> None:
+        self.assertEqual(
+            _route_after_case_metadata({"document_ocr_results": []}),
+            "extract_document_text",
+        )
+
     def test_imprint_only_ocr_triggers_a_retry(self) -> None:
         content = "\n".join(
             [

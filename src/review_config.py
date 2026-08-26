@@ -4,6 +4,7 @@ from typing import Any, Dict, List, TypedDict
 from constants import (
     CASE_LEVEL_CONFIG_PATH,
     CONTEXT_SENSITIVE_CONFIG_PATH,
+    GENERATED_CONTEXT_SECTION_FIELDS_PATH,
     REVIEW_PIPELINE_CONFIG_PATH,
     SECTION_FIELDS_PATH,
     ReviewExecutorType,
@@ -45,9 +46,21 @@ def load_case_level_review_items(
 def load_context_sensitive_settings(
     config_path: str | Path = CONTEXT_SENSITIVE_CONFIG_PATH,
     section_fields_path: str | Path = SECTION_FIELDS_PATH,
+    generated_section_fields_path: str | Path = (
+        GENERATED_CONTEXT_SECTION_FIELDS_PATH
+    ),
 ) -> ContextSensitiveSettings:
     configured = load_yaml(config_path)
     field_specs = load_yaml(section_fields_path)
+    generated_field_specs = load_yaml(generated_section_fields_path) or {}
+    for document_type, document_fields in generated_field_specs.items():
+        target = field_specs.setdefault(document_type, {})
+        for field_name, field_spec in document_fields.items():
+            if field_name in target and target[field_name] != field_spec:
+                raise ValueError(
+                    f"生成字段与人工配置冲突: {document_type}.{field_name}"
+                )
+            target[field_name] = field_spec
     prewarm_fields = {
         document_type: (
             list(field_specs[document_type])

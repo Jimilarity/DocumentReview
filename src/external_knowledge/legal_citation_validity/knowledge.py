@@ -35,6 +35,38 @@ def _configured_string_list(config: dict[str, Any], key: str) -> list[str]:
     return [item.strip() for item in value]
 
 
+def _configured_query_fields(config: dict[str, Any]) -> list[dict[str, str]]:
+    value = config.get("字段", [])
+    if not isinstance(value, list):
+        raise TypeError("法条检索查询.字段必须是数组")
+    result: list[dict[str, str]] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            result.append({"字段": item.strip()})
+            continue
+        if not isinstance(item, dict):
+            raise TypeError("法条检索查询.字段必须由字符串或对象组成")
+        field_name = item.get("字段")
+        document_name = item.get("文书")
+        if not isinstance(field_name, str) or not field_name.strip():
+            raise TypeError("法条检索查询.字段对象必须包含非空字段")
+        if document_name is not None and (
+            not isinstance(document_name, str) or not document_name.strip()
+        ):
+            raise TypeError("法条检索查询.字段对象的文书必须是非空字符串")
+        result.append(
+            {
+                "字段": field_name.strip(),
+                **(
+                    {"文书": document_name.strip()}
+                    if isinstance(document_name, str)
+                    else {}
+                ),
+            }
+        )
+    return result
+
+
 def _query_config(context: KnowledgeContext) -> dict[str, Any]:
     config = context.review_item.get("法条检索查询", {})
     if config is None:
@@ -108,7 +140,38 @@ def _query_text(
         raise ValueError("法条检索需要案情")
 
     parts = [f"案由：{case_reason}", f"案情：{case_facts}"]
-    for field_name in _configured_string_list(config, "字段"):
+    structured_fields = context.structured_fields
+    for field_ref in _configured_query_fields(config):
+        field_name = field_ref["字段"]
+        document_name = field_ref.get("文书")
+        matches = [
+            item
+            for item in structured_fields
+            if item.get("field") == field_name
+            and (
+                document_name is None
+                or item.get("document_type") == document_name
+            )
+            and item.get("value") not in (None, "")
+        ]
+        if document_name is None and context.document_name:
+            current_matches = [
+                item
+                for item in matches
+                if item.get("document_type") == context.document_name
+            ]
+            if current_matches:
+                matches = current_matches
+        if matches:
+            for item in matches:
+                value = item.get("value")
+                label = (
+                    f"{item.get('document_type')}的{field_name}"
+                    if item.get("document_type")
+                    else field_name
+                )
+                parts.append(f"{label}：{value}")
+            continue
         value = _text_value(metadata, field_name)
         if value is not None:
             parts.append(f"{field_name}：{value}")

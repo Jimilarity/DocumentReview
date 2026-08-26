@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 
@@ -20,3 +20,4 @@ class KnowledgeContext:
     document_name: str
     section_id: int
     section_ocr: str
+    structured_fields: List[Dict[str, Any]] = field(default_factory=list)

@@ -13,6 +13,8 @@ from agents import (
     BaseAgents,
     DocumentMappingAgents,
     DocumentSectionMappingResult,
+    SectionFieldExtractionResult,
+    StructuredReviewAgents,
 )
 from utils import load_yaml
 
@@ -123,11 +125,14 @@ class AgentPromptConfigTest(unittest.TestCase):
             ),
         )
 
-        self.assertIn("不是文书页面的实际标题", system_prompt)
+        self.assertIn("不是页面实际标题", system_prompt)
         self.assertIn("不得自行", system_prompt)
-        self.assertIn("唯一允许使用的评价标准", system_prompt)
-        self.assertIn("可能只是识别", system_prompt)
-        self.assertIn("不得自行补充当前规则未提供的法条", system_prompt)
+        self.assertIn("唯一的评价标准", system_prompt)
+        self.assertIn("疑似 OCR 错误", system_prompt)
+        self.assertIn("不得使用模型记忆中的法条", system_prompt)
+        self.assertIn("issue 准入条件", system_prompt)
+        self.assertIn("日期、时间、编号和金额的书写格式从宽判断", system_prompt)
+        self.assertIn("证据不足时宁可不报", system_prompt)
         self.assertIn("只用于定位和辨识", task_prompt)
         self.assertIn("按 page_index 顺序", task_prompt)
         self.assertIn("页眉页脚", task_prompt)
@@ -256,6 +261,43 @@ class AgentPromptConfigTest(unittest.TestCase):
                     ]
                 }
             )
+
+
+class StructuredOutputRetryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_json_scalar_is_retried_with_schema_correction(self) -> None:
+        prompts = []
+
+        class FakeModel:
+            def __init__(self) -> None:
+                self.responses = iter([
+                    SimpleNamespace(content="4.061"),
+                    SimpleNamespace(
+                        content='{"fields":{"案由":"测试案"}}'
+                    ),
+                ])
+
+            async def ainvoke(self, messages):
+                prompts.append(messages[1].content)
+                return next(self.responses)
+
+        agents = StructuredReviewAgents.__new__(StructuredReviewAgents)
+        agents.response_format_mode = agents.JSON_OBJECT_MODE
+        agents.agents_config = load_yaml(
+            SRC_ROOT / "config" / "agents.yaml"
+        )
+
+        result = await agents._ainvoke_structured_agent(
+            agent=FakeModel(),
+            agent_name="section_field_extractor_agent",
+            response_model=SectionFieldExtractionResult,
+            prompt_text="提取案由",
+            recursion_limit=20,
+        )
+
+        self.assertEqual(result.fields, {"案由": "测试案"})
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("上一轮输出未通过程序结构校验", prompts[1])
+        self.assertIn("不得返回数字", prompts[1])
 
 
 if __name__ == "__main__":

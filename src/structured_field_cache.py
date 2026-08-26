@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from reviewers.document_mapping import (
     document_types_may_share_section,
+    load_document_mapping_config,
     load_compatible_document_type_groups,
 )
 from utils import atomic_write_json, read_json
@@ -36,9 +37,7 @@ def build_structured_source_fingerprint(
             "meta_info": meta_info,
             "dir_info": dir_info,
             "ocr_results": ocr_results,
-            "compatible_document_type_groups": (
-                load_compatible_document_type_groups()
-            ),
+            "document_mapping_config": load_document_mapping_config(),
         },
         ensure_ascii=False,
         sort_keys=True,

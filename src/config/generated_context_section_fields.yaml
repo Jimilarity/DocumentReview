@@ -1,0 +1,994 @@
+# 由 scripts/sync_context_rules_from_xlsx.py 自动生成，请勿手工修改。
+案件信息表:
+  当事人信息:
+    eng_name: case_party_info
+    type: list[dict]
+    notes: null
+  案件简介:
+    eng_name: case_summary
+    type: str
+    notes: 案件描述信息
+  案件发生地址:
+    eng_name: case_address
+    type: str
+    notes: null
+  调查取证信息:
+    eng_name: case_evidence_collect_info
+    type: list[dict]
+    notes: null
+  整改复查信息:
+    eng_name: case_follow_up_info
+    type: list[dict]
+    notes: null
+  案由:
+    eng_name: case_cause
+    type: str
+    notes: null
+  案发时间:
+    eng_name: violation_time
+    type: datetime
+    notes: null
+  案件id:
+    eng_name: case_id
+    type: str
+    notes: null
+  案件类型:
+    eng_name: case_type
+    type: str
+    notes: null
+  案件状态:
+    eng_name: case_status
+    type: int
+    notes: null
+  案件编号:
+    eng_name: case_no
+    type: str
+    notes: 案件编号
+  案件名称:
+    eng_name: case_name
+    type: str
+    notes: null
+  案件来源:
+    eng_name: case_source
+    type: literal['投诉', '举报', '巡查', '检查', '其他']
+    notes: 可选项：投诉、举报、巡查、检查、其他
+  案发区域:
+    eng_name: case_area
+    type: str
+    notes: null
+  案件所属领域:
+    eng_name: case_field
+    type: str
+    notes: null
+  案件来源信息:
+    eng_name: case_source_info
+    type: list[dict]
+    notes: null
+  立案信息:
+    eng_name: case_file_info
+    type: list[dict]
+    notes: null
+  告知权利信息:
+    eng_name: case_advise_rights_info
+    type: list[dict]
+    notes: null
+  听证信息:
+    eng_name: case_hear_info
+    type: list[dict]
+    notes: null
+  法制审核信息:
+    eng_name: case_legality_review_info
+    type: list[dict]
+    notes: null
+  集体讨论:
+    eng_name: case_group_discuss_info
+    type: list[dict]
+    notes: null
+  决定:
+    eng_name: case_decision_info
+    type: list[dict]
+    notes: null
+  送达公示:
+    eng_name: case_service_publication_info
+    type: list[dict]
+    notes: null
+  执行:
+    eng_name: case_enforcement_info
+    type: list[dict]
+    notes: null
+  结案归档:
+    eng_name: case_closed_filed_info
+    type: list[dict]
+    notes: null
+  其他证据:
+    eng_name: case_other_evidence_info
+    type: list[dict]
+    notes: null
+  拓展字段信息:
+    eng_name: case_expand_field_info
+    type: list[dict]
+    notes: null
+  补充描述信息:
+    eng_name: case_extended_desc
+    type: str
+    notes: null
+  案件截止时间:
+    eng_name: case_deadline_time
+    type: datetime
+    notes: null
+当事人信息表:
+  当事人类型:
+    eng_name: party_type
+    type: str
+    notes: null
+  当事人名称:
+    eng_name: party_name
+    type: str
+    notes: null
+  当事人证件类型:
+    eng_name: party_card_type
+    type: str
+    notes: null
+  当事人证件号码:
+    eng_name: party_card_no
+    type: str
+    notes: null
+  当事人代表人:
+    eng_name: party_legal_person_name
+    type: str
+    notes: null
+  当事人代表人证件类型:
+    eng_name: legal_person_card_type
+    type: str
+    notes: null
+  当事人代表人证件号码:
+    eng_name: legal_person_card_no
+    type: str
+    notes: null
+  个体工商户组织形式:
+    eng_name: object_business_form
+    type: str
+    notes: null
+  当事人证件地址:
+    eng_name: party_register_address
+    type: str
+    notes: null
+  当事人实际地址:
+    eng_name: party_actual_address
+    type: str
+    notes: null
+  当事人联系电话:
+    eng_name: party_phone
+    type: list[dict]
+    notes: null
+  当事人代表人联系电话:
+    eng_name: legal_person_phone
+    type: str
+    notes: null
+  当事人代表人地址:
+    eng_name: legal_person_location
+    type: str
+    notes: null
+  当事人性别:
+    eng_name: party_sex
+    type: str
+    notes: null
+  当事人生日:
+    eng_name: party_birthday
+    type: datetime
+    notes: null
+  当事人民族:
+    eng_name: party_nation
+    type: str
+    notes: null
+检查/勘验对象信息:
+  勘验对象信息:
+    eng_name: object_info
+    type: list[dict]
+    notes: null
+行政处罚事先（听证）告知书:
+  不予处罚依据:
+    eng_name: no_penalty_basis
+    type: str
+    notes: null
+  裁量依据:
+    eng_name: discretionary_basis
+    type: str
+    notes: null
+  裁量等级:
+    eng_name: discretionary_level
+    type: str
+    notes: null
+  告知书类型:
+    eng_name: doc_type
+    type: str
+    notes: null
+  责令整改通知书文号:
+    eng_name: document_no
+    type: str
+    notes: null
+  调查日期:
+    eng_name: invest_date
+    type: datetime
+    notes: null
+  陈述申辩期限:
+    eng_name: statement_defense_expire
+    type: int
+    notes: null
+  陈述申辩地址:
+    eng_name: statement_defense_address
+    type: str
+    notes: null
+  是否告知陈述申辩权利:
+    eng_name: is_statement_rights_notified
+    type: str
+    notes: null
+  是否告知听证权利:
+    eng_name: is_hearing_rights_notified
+    type: str
+    notes: null
+  听证申请期限:
+    eng_name: hearing_apply_expire
+    type: int
+    notes: null
+  执法主体联系人:
+    eng_name: subject_contact
+    type: str
+    notes: null
+  执法主体联系电话:
+    eng_name: subject_phone
+    type: str
+    notes: null
+  执法主体联系地址:
+    eng_name: subject_address
+    type: str
+    notes: null
+  行政执法主体印章:
+    eng_name: subject_sign_value
+    type: str
+    notes: null
+  行政执法主体印日期:
+    eng_name: subject_sign_date
+    type: datetime
+    notes: null
+  授送人签名:
+    eng_name: receiver_sign_value
+    type: str
+    notes: null
+  授送人签名时间:
+    eng_name: receiver_sign_date
+    type: datetime
+    notes: null
+案件调查报告:
+  裁量依据:
+    eng_name: discretionary_basis
+    type: str
+    notes: null
+  裁量等级:
+    eng_name: discretionary_level
+    type: str
+    notes: null
+  调查开始时间:
+    eng_name: invest_start_date
+    type: datetime
+    notes: null
+  承办人员信息:
+    eng_name: implement_person_info
+    type: list[dict]
+    notes: '[
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"},
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"}
+
+      ]'
+  调查结束时间:
+    eng_name: invest_end_date
+    type: datetime
+    notes: null
+行政处罚决定审批表:
+  裁量依据:
+    eng_name: discretionary_basis
+    type: str
+    notes: null
+  裁量等级:
+    eng_name: discretionary_level
+    type: str
+    notes: null
+  陈述、申辩内容:
+    eng_name: statement_content
+    type: str
+    notes: null
+  陈述、申辩采纳内容:
+    eng_name: adopt_statement_content
+    type: str
+    notes: null
+  是否予以公示:
+    eng_name: is_public
+    type: str
+    notes: null
+  不予公示原因:
+    eng_name: no_public_reason
+    type: str
+    notes: null
+  承办人员信息:
+    eng_name: implement_person_info
+    type: list[dict]
+    notes: '[
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"},
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"}
+
+      ]'
+  承办机构意见:
+    eng_name: implement_agency_opinion
+    type: str
+    notes: null
+  承办机构负责人签名:
+    eng_name: implement_agency_sign_value
+    type: str
+    notes: null
+  承办机构负责人签名日期:
+    eng_name: implement_agency_sign_date
+    type: datetime
+    notes: null
+  法制机构审核意见:
+    eng_name: review_leader_opinion
+    type: str
+    notes: null
+  法制机构负责人签名:
+    eng_name: review_leader_sign_value
+    type: str
+    notes: null
+  法制机构负责人签名日期:
+    eng_name: review_leader_sign_date
+    type: datetime
+    notes: null
+  审批负责人审批意见:
+    eng_name: approving_leader_opinion
+    type: str
+    notes: null
+  审批负责人签名:
+    eng_name: approving_leader_sign_value
+    type: str
+    notes: null
+  审批负责人签名日期:
+    eng_name: approving_leader_sign_date
+    type: datetime
+    notes: null
+  附件信息:
+    eng_name: attachment_info
+    type: str
+    notes: null
+处罚信息表:
+  处罚天数:
+    eng_name: penalty_days
+    type: int
+    notes: null
+  处罚阶段:
+    eng_name: penalty_stage
+    type: str
+    notes: null
+  金额大写:
+    eng_name: penalty_amount_word
+    type: str
+    notes: null
+  处罚期限类型:
+    eng_name: penalty_period_type
+    type: str
+    notes: null
+证件信息:
+  出生日期/注册日期:
+    eng_name: doc_subject_birthday
+    type: datetime
+    notes: null
+调查审批信息:
+  调查开始日期:
+    eng_name: invest_start_date
+    type: datetime
+    notes: null
+  承办人员信息:
+    eng_name: implement_person_info
+    type: list[dict]
+    notes: '[
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"},
+
+      {"name":"xxx","signed":"1","sign_date":"xxxx"}
+
+      ]'
+  调查结束日期:
+    eng_name: invest_end_date
+    type: datetime
+    notes: null
+  承办机构名称:
+    eng_name: implement_agency_name
+    type: str
+    notes: null
+  承办意见:
+    eng_name: implement_opinion
+    type: str
+    notes: null
+  审核意见:
+    eng_name: review_opinion
+    type: str
+    notes: null
+  审核负责人签名:
+    eng_name: review_person_sign
+    type: str
+    notes: null
+  审核负责人签名日期:
+    eng_name: review_sign_date
+    type: datetime
+    notes: null
+  审批意见:
+    eng_name: approval_opinion
+    type: str
+    notes: null
+  审批负责人签名:
+    eng_name: approval_person_sign
+    type: str
+    notes: null
+  审批签名日期:
+    eng_name: approval_sign_date
+    type: datetime
+    notes: null
+  附件信息:
+    eng_name: attachment_info
+    type: str
+    notes: null
+取证记录信息:
+  取证开始时间:
+    eng_name: evidence_start_time
+    type: datetime
+    notes: null
+  取证结束时间:
+    eng_name: evidence_end_time
+    type: datetime
+    notes: null
+  制作过程说明:
+    eng_name: product_process_desc
+    type: str
+    notes: null
+  案号:
+    eng_name: case_no
+    type: str
+    notes: 案件编号
+  取证地点:
+    eng_name: evidence_location
+    type: str
+    notes: null
+  制作方法:
+    eng_name: production_method
+    type: str
+    notes: null
+  当事人签字内容:
+    eng_name: confirm_content
+    type: str
+    notes: null
+  当事人签名:
+    eng_name: party_sign_value
+    type: int
+    notes: null
+  当事人签名日期:
+    eng_name: party_sign_date
+    type: datetime
+    notes: null
+通用文书数据:
+  文书字段数据:
+    eng_name: fields
+    type: list[dict]
+    notes: null
+  文书名称:
+    eng_name: title
+    type: str
+    notes: null
+图片识别信息:
+  图片识别内容:
+    eng_name: explain
+    type: list[dict]
+    notes: null
+简易程序备案记录:
+  行政处罚决定书文号:
+    eng_name: document_no
+    type: str
+    notes: null
+  制作过程说明:
+    eng_name: product_process_desc
+    type: str
+    notes: null
+  取证地点:
+    eng_name: evidence_location
+    type: str
+    notes: null
+  制作方法:
+    eng_name: production_method
+    type: str
+    notes: null
+  取证开始时间:
+    eng_name: evidence_start_time
+    type: datetime
+    notes: null
+  取证结束时间:
+    eng_name: evidence_end_time
+    type: datetime
+    notes: null
+  附件照片:
+    eng_name: photo_attachment
+    type: list[dict]
+    notes: null
+执法证信息:
+  执法证id:
+    eng_name: card_no
+    type: str
+    notes: null
+  执法机构名称:
+    eng_name: card_object_name
+    type: str
+    notes: null
+  执法人员姓名:
+    eng_name: card_user_name
+    type: str
+    notes: null
+  有效期:
+    eng_name: card_expiration_date
+    type: datetime
+    notes: null
+  签发机关:
+    eng_name: card_issuing_office
+    type: str
+    notes: null
+听证通知书:
+  听证举行时间:
+    eng_name: hearing_time
+    type: datetime
+    notes: null
+  听证通知书文号:
+    eng_name: document_no
+    type: str
+    notes: null
+  申请听证日期:
+    eng_name: apply_date
+    type: datetime
+    notes: null
+  案由:
+    eng_name: case_cause
+    type: str
+    notes: null
+  听证地点:
+    eng_name: hearing_location
+    type: str
+    notes: null
+  听证人员信息:
+    eng_name: hearing_officer_info
+    type: list[dict]
+    notes: null
+  回避申请截止时间:
+    eng_name: recusal_apply_deadline
+    type: datetime
+    notes: null
+  是否告知延期听证权利:
+    eng_name: is_adjourn_right_notified
+    type: int
+    notes: null
+  延期听证申请截止时间:
+    eng_name: adjourn_apply_deadline
+    type: datetime
+    notes: null
+  执法主体联系人:
+    eng_name: subject_contact
+    type: str
+    notes: null
+  执法主体联系电话:
+    eng_name: subject_phone
+    type: str
+    notes: null
+  执法主体联系地址:
+    eng_name: subject_address
+    type: str
+    notes: null
+  行政执法主体印章:
+    eng_name: subject_sign_value
+    type: str
+    notes: null
+  行政执法主体印日期:
+    eng_name: subject_sign_date
+    type: datetime
+    notes: null
+  申请人签字/盖章:
+    eng_name: applicant_sign_value
+    type: str
+    notes: null
+  申请人签字/盖章日期:
+    eng_name: applicant_sign_date
+    type: datetime
+    notes: null
+放弃陈述、申辩申明:
+  声明人签字:
+    eng_name: declarant_sign_value
+    type: str
+    notes: null
+听证笔录:
+  案由:
+    eng_name: case_cause
+    type: str
+    notes: null
+  案件名称:
+    eng_name: case_name
+    type: str
+    notes: null
+  听证开始时间:
+    eng_name: hearing_start_time
+    type: datetime
+    notes: null
+  听证结束时间:
+    eng_name: hearing_end_time
+    type: datetime
+    notes: null
+  听证地点:
+    eng_name: hearing_location
+    type: str
+    notes: null
+  听证方式:
+    eng_name: hearing_mode
+    type: str
+    notes: null
+  听证人员信息:
+    eng_name: hearing_officer_info
+    type: list[dict]
+    notes: null
+  是否有其他参与人员:
+    eng_name: has_other_attende
+    type: int
+    notes: null
+  其他参与人员信息:
+    eng_name: other_attende_info
+    type: list[dict]
+    notes: null
+  案件调查人员信息:
+    eng_name: invest_officer_info
+    type: list[dict]
+    notes: null
+  现场负责人姓名:
+    eng_name: scene_commander_name
+    type: str
+    notes: null
+  现场负责人证件类型:
+    eng_name: scene_commander_card_type
+    type: str
+    notes: null
+  现场负责人证件号码:
+    eng_name: scene_commander_card_no
+    type: str
+    notes: null
+  现场负责人联系电话:
+    eng_name: scene_commander_phone
+    type: str
+    notes: null
+  现场负责人工作岗位:
+    eng_name: scene_commander_position
+    type: str
+    notes: null
+  现场工作人员信息:
+    eng_name: scene_worker_info
+    type: list[dict]
+    notes: null
+  第三人及委托代理人信息:
+    eng_name: third_party_info
+    type: list[dict]
+    notes: null
+  《行政处罚听证通知书》送达日期:
+    eng_name: notice_deliver_date
+    type: datetime
+    notes: null
+  《行政处罚听证通知书》文号:
+    eng_name: notice_doc_no
+    type: str
+    notes: null
+  已核对听证参与人信息:
+    eng_name: hearing_parties_info
+    type: list[dict]
+    notes: null
+  听证权利义务告知:
+    eng_name: notice_rights_duty
+    type: list[dict]
+    notes: null
+  当事人权利内容:
+    eng_name: party_rights_content
+    type: str
+    notes: null
+  第三人权利内容:
+    eng_name: third_party_rights_content
+    type: str
+    notes: null
+  听证参与人义务:
+    eng_name: hearing_parties_duty
+    type: str
+    notes: null
+  是否申请回避:
+    eng_name: request_recusal
+    type: bool
+    notes: ''
+  被申请回避的执法人员姓名:
+    eng_name: recusal_officer_name
+    type: str
+    notes: 允许多个，多个值以逗号分隔
+  申请回避的理由:
+    eng_name: recusal_reason
+    type: str
+    notes: null
+  违法事实:
+    eng_name: violation_facts
+    type: str
+    notes: null
+  违法依据:
+    eng_name: violation_basis
+    type: str
+    notes: null
+  处罚意见:
+    eng_name: penalty_opinion
+    type: str
+    notes: null
+  处罚依据:
+    eng_name: penalty_basis
+    type: str
+    notes: null
+  当事人申辩内容:
+    eng_name: party_defense_content
+    type: str
+    notes: null
+  第三人陈述内容:
+    eng_name: third_party_statement_content
+    type: str
+    notes: null
+  质证和辩论内容:
+    eng_name: examination_argument_content
+    type: str
+    notes: null
+  办案人员最后意见:
+    eng_name: prosecutor_opinion
+    type: str
+    notes: null
+  当事人最后意见:
+    eng_name: party_opinion
+    type: str
+    notes: null
+  第三人最后意见:
+    eng_name: third_party_opinion
+    type: str
+    notes: null
+  听证申请人签名:
+    eng_name: petitioner_sign_value
+    type: str
+    notes: null
+  听证申请人签名日期:
+    eng_name: petitioner_sign_date
+    type: datetime
+    notes: null
+  听证申请人是否拒签:
+    eng_name: petitioner_refusal
+    type: str
+    notes: null
+  听证申请人是否拒签事由:
+    eng_name: petitioner_refusal_reason
+    type: str
+    notes: null
+  委托代理人签名:
+    eng_name: agent_sign_value
+    type: str
+    notes: null
+  委托代理人签名日期:
+    eng_name: agent_sign_date
+    type: datetime
+    notes: null
+  委托代理人是否拒签:
+    eng_name: agent_sign_refusal
+    type: str
+    notes: null
+  委托代理人拒签事由:
+    eng_name: agent_sign_refusal_reason
+    type: str
+    notes: null
+听证报告:
+  听证人员信息:
+    eng_name: hearing_officer_info
+    type: list[dict]
+    notes: null
+  处理意见和建议:
+    eng_name: hearing_final_opinion
+    type: str
+    notes: null
+法律职业资格证书:
+  证书编号:
+    eng_name: cert_no
+    type: str
+    notes: null
+  姓名:
+    eng_name: name
+    type: str
+    notes: null
+  颁发日期:
+    eng_name: issue_date
+    type: datetime
+    notes: null
+  性别:
+    eng_name: sex
+    type: str
+    notes: null
+  生日:
+    eng_name: birthday
+    type: datetime
+    notes: null
+  民族/国籍:
+    eng_name: nation
+    type: str
+    notes: null
+  身份证号/其他证件:
+    eng_name: card_no
+    type: str
+    notes: null
+  证件类型:
+    eng_name: card_type
+    type: str
+    notes: null
+  申请地:
+    eng_name: apply_area
+    type: str
+    notes: null
+法制审核意见:
+  送审日期:
+    eng_name: submission_date
+    type: datetime
+    notes: null
+  法制审核人意见:
+    eng_name: legal_review_opinion
+    type: list[dict]
+    notes: null
+  其他法制审核意见:
+    eng_name: other_review_opinion
+    type: str
+    notes: null
+  法制审核是否通过:
+    eng_name: legal_review_status
+    type: str
+    notes: null
+  违法事实:
+    eng_name: violation_facts
+    type: str
+    notes: null
+  法制审核人员签名:
+    eng_name: legal_review_sign_value
+    type: str
+    notes: null
+  法制机构负责人签名:
+    eng_name: review_leader_sign_value
+    type: str
+    notes: null
+  案由:
+    eng_name: case_cause
+    type: str
+    notes: null
+  承办机构名称:
+    eng_name: implement_agency_name
+    type: str
+    notes: null
+  执法人员意见:
+    eng_name: enforce_officer_opinion
+    type: str
+    notes: null
+  执法处室负责人意见:
+    eng_name: officer_leader_opinion
+    type: str
+    notes: null
+  执法处室负责人签字:
+    eng_name: officer_leader_sign_value
+    type: str
+    notes: null
+  执法处室负责人签字日期:
+    eng_name: officer_leader_sign_date
+    type: datetime
+    notes: null
+  法制审核人员签名日期:
+    eng_name: legal_review_sign_date
+    type: datetime
+    notes: null
+  法制机构负责人意见:
+    eng_name: review_leader_opinion
+    type: str
+    notes: null
+  法制机构负责人签名日期:
+    eng_name: review_leader_sign_date
+    type: datetime
+    notes: null
+  分管局领导意见:
+    eng_name: supervising_leader_opinion
+    type: str
+    notes: null
+  分管局领导签名:
+    eng_name: supervising_leader_sign_value
+    type: str
+    notes: null
+  分管局领导签名日期:
+    eng_name: supervising_leader_sign_date
+    type: datetime
+    notes: null
+集体讨论笔录:
+  结论性意见:
+    eng_name: final_opinion
+    type: str
+    notes: 集体讨论形成的结论性意见或决定
+  讨论开始时间:
+    eng_name: discussion_start_time
+    type: datetime
+    notes: null
+  讨论结束时间:
+    eng_name: discussion_end_time
+    type: datetime
+    notes: null
+  参与人员信息:
+    eng_name: attende_info
+    type: list[dict]
+    notes: 参加集体讨论的行政机关负责人姓名、职务和签名信息
+  讨论主持人姓名:
+    eng_name: discussion_host_name
+    type: str
+    notes: null
+  （案件承办人汇报）案件情况:
+    eng_name: case_summary
+    type: str
+    notes: 案件描述信息
+  (听证主持人汇报)听证情况:
+    eng_name: hearing_summary
+    type: str
+    notes: null
+  讨论主持人职务:
+    eng_name: discussion_host_position
+    type: str
+    notes: null
+延期执行申请书:
+  行政处罚决定书文号:
+    eng_name: dec_doc_name
+    type: str
+    notes: null
+  行政处罚决定书做出日期:
+    eng_name: dec_doc_date
+    type: datetime
+    notes: null
+  申请延期天数:
+    eng_name: deferral_days
+    type: int
+    notes: null
+  申请理由:
+    eng_name: apply_reason
+    type: str
+    notes: null
+  申请依据:
+    eng_name: legal_basis
+    type: str
+    notes: null
+  承诺最后执行日期:
+    eng_name: promised_execute_date
+    type: datetime
+    notes: null
+  是否有公司盖章/签字:
+    eng_name: applicant_seal
+    type: int
+    notes: null
+  是否有申请人盖章/签字:
+    eng_name: applicant_sign
+    type: int
+    notes: null
+  申请时间:
+    eng_name: apply_date
+    type: datetime
+    notes: null
+送达回证:
+  见证人姓名:
+    eng_name: witness_info
+    type: list[dict]
+    notes: 格式示例： [\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"\n},\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"}\n]
+  案件编号（case_no）:
+    eng_name: case_no
+    type: str
+    notes: 案件编号

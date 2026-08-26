@@ -24,12 +24,15 @@ from .base import DocumentReviewExecutor, ReviewState
 from .consistency import (
     CONSISTENCY_TASK,
     ConsistencySource,
+    DEFAULT_FIELD_CATEGORY,
+    FIELD_CATEGORIES,
     aggregate_consistency_results,
     comparable_sources,
     format_source_values,
     is_executable_consistency_rule,
     required_field_issues,
 )
+from rules.normalization import canonical_document_type, load_rule_aliases
 from .section_content import extract_section_ocr_text
 from rules.filtering import (
     context_sensitive_document_names,
@@ -42,6 +45,10 @@ class ContextSensitiveReviewState(ReviewState, total=False):
     structured_field_cache_path: str
     prewarmed_section_ids: List[int]
     delivery_event_count: int
+
+
+CONTEXTUAL_LEGALITY_TASK = "上下文合法性审查"
+NO_PENALTY_LEGALITY_TASK = "不予处罚合法性审查"
 
 
 def _valid_field_value(field_type: str, value: Any) -> bool:
@@ -250,12 +257,33 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 context.ocr_results,
             ),
         )
-        result = await self.require_context_sensitive_agents().ainvoke_section_field_extractor(
-            prompt,
-            self.settings.agent_recursion_limit,
-        )
-        validate_extracted_fields(result.fields, specs)
-        return result.fields
+        agents = self.require_context_sensitive_agents()
+        max_attempts = agents._structured_output_max_attempts()
+        validation_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            current_prompt = prompt
+            if validation_error is not None:
+                current_prompt += (
+                    "\n\n<previous_field_validation_error>\n"
+                    "上一轮虽然返回了 fields 对象，但字段名或字段值类型未通过校验："
+                    f"{type(validation_error).__name__}: {validation_error}\n"
+                    "请严格按照 field_specs 重新提取；字段必须完整，类型必须匹配，"
+                    "找不到时返回 null。\n"
+                    "</previous_field_validation_error>"
+                )
+            result = await agents.ainvoke_section_field_extractor(
+                current_prompt,
+                self.settings.agent_recursion_limit,
+            )
+            try:
+                validate_extracted_fields(result.fields, specs)
+                return result.fields
+            except (TypeError, ValueError) as exc:
+                validation_error = exc
+                if attempt == max_attempts:
+                    raise
+        assert validation_error is not None
+        raise validation_error
 
     async def _extract_delivery_event_fields(
         self,
@@ -410,6 +438,12 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         event: Dict[str, Any],
     ) -> int | None:
         context = self.require_document_context()
+        preferred_section_id = self._preferred_delivery_section(
+            receipt_section_id,
+            event,
+        )
+        if preferred_section_id is not None:
+            return preferred_section_id
         prompt = self.require_context_sensitive_agents().build_task_prompt(
             "delivery_receipt_mapping",
             meta_info=json.dumps(
@@ -452,6 +486,110 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             return TECHNICAL_MAPPING_FAILURE
         return related_section_id
 
+    def _preferred_delivery_section(
+        self,
+        receipt_section_id: int,
+        event: Dict[str, Any],
+    ) -> int | None:
+        context = self.require_document_context()
+        receipt_type = self.context_settings["service_receipt_document_type"]
+        section_by_id = {
+            int(item["section_id"]): item for item in context.dir_info
+        }
+        document_ids = [
+            section_id
+            for section_id, item in section_by_id.items()
+            if section_id != receipt_section_id
+            and str(item.get("section_name") or "") != receipt_type
+            and "送达回证" not in str(item.get("section_name") or "")
+            and "送达回执" not in str(item.get("section_name") or "")
+        ]
+        mapped_document_ids = {
+            section_id
+            for document_type, section_ids in getattr(
+                self, "document_section_map", {}
+            ).items()
+            if document_type != receipt_type
+            for section_id in section_ids
+        }
+        if mapped_document_ids:
+            document_ids = [
+                section_id
+                for section_id in document_ids
+                if section_id in mapped_document_ids
+            ]
+        if not document_ids:
+            return None
+
+        event_document_name = event.get("文书名称")
+        if isinstance(event_document_name, str) and event_document_name.strip():
+            normalized_event_name = self._normalize_delivery_name(
+                event_document_name
+            )
+            matching_ids = [
+                section_id
+                for section_id in document_ids
+                if self._delivery_names_match(
+                    normalized_event_name,
+                    self._normalize_delivery_name(
+                        str(section_by_id[section_id].get("section_name") or "")
+                    ),
+                )
+            ]
+            if matching_ids:
+                return self._nearest_preceding_section(
+                    receipt_section_id,
+                    matching_ids,
+                    section_by_id,
+                )
+
+        preceding_ids = [
+            section_id for section_id in document_ids if section_id < receipt_section_id
+        ]
+        if not preceding_ids:
+            return None
+        return max(
+            preceding_ids,
+            key=lambda section_id: (
+                int(section_by_id[section_id].get("section_page", section_id)),
+                section_id,
+            ),
+        )
+
+    @staticmethod
+    def _normalize_delivery_name(value: str) -> str:
+        normalized = "".join(value.split()).replace("（", "(").replace("）", ")")
+        try:
+            return canonical_document_type(normalized, load_rule_aliases())
+        except (TypeError, ValueError):
+            return normalized
+
+    @staticmethod
+    def _delivery_names_match(event_name: str, section_name: str) -> bool:
+        if not event_name or not section_name:
+            return False
+        return (
+            event_name == section_name
+            or event_name in section_name
+            or section_name in event_name
+        )
+
+    @staticmethod
+    def _nearest_preceding_section(
+        receipt_section_id: int,
+        section_ids: Iterable[int],
+        section_by_id: Dict[int, Dict[str, Any]],
+    ) -> int:
+        preceding = [section_id for section_id in section_ids if section_id < receipt_section_id]
+        candidates = preceding or list(section_ids)
+        return max(
+            candidates,
+            key=lambda section_id: (
+                int(section_by_id[section_id].get("section_page", section_id)),
+                section_id,
+            ),
+        )
+
     async def _prewarm_delivery_receipt(
         self,
         cache: StructuredFieldCache,
@@ -474,14 +612,80 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
         technical_failures = []
         for event in events:
+            current_relation_id = event.get("related_section_id")
+            if not (
+                isinstance(current_relation_id, int)
+                and current_relation_id > 0
+            ):
+                continue
+            preferred_relation_id = None
+            if getattr(self, "context", None) is not None:
+                preferred_relation_id = self._preferred_delivery_section(
+                    section_id,
+                    event,
+                )
+            if (
+                isinstance(preferred_relation_id, int)
+                and preferred_relation_id > 0
+                and preferred_relation_id != current_relation_id
+            ):
+                self.logger.warning(
+                    "校正送达事件文书映射: receipt_section_id=%s event_id=%s "
+                    "旧映射=%s 新映射=%s",
+                    section_id,
+                    event["event_id"],
+                    current_relation_id,
+                    preferred_relation_id,
+                )
+                event["related_section_id"] = preferred_relation_id
+                changed = True
+
+        mapped_relation_ids: set[int] = set()
+        for event in events:
+            related_section_id = event.get("related_section_id")
+            if (
+                isinstance(related_section_id, int)
+                and related_section_id > 0
+            ):
+                if related_section_id in mapped_relation_ids:
+                    event["related_section_id"] = None
+                    changed = True
+                    self.logger.warning(
+                        "同一送达回证存在重复文书映射，保留首个事件并将后续事件标记为未关联: "
+                        "receipt_section_id=%s event_id=%s related_section_id=%s",
+                        section_id,
+                        event["event_id"],
+                        related_section_id,
+                    )
+                    continue
+                mapped_relation_ids.add(related_section_id)
+        for event in events:
             stored_relation_key = cache.delivery_event_storage_key(event)
             if event.get("related_section_id") == TECHNICAL_MAPPING_FAILURE:
                 related_section_id = await self._map_delivery_event(
                     section_id,
                     event,
                 )
+                if (
+                    isinstance(related_section_id, int)
+                    and related_section_id > 0
+                    and related_section_id in mapped_relation_ids
+                ):
+                    self.logger.warning(
+                        "送达事件映射冲突，保留首个事件并将后续事件标记为未关联: "
+                        "receipt_section_id=%s event_id=%s related_section_id=%s",
+                        section_id,
+                        event["event_id"],
+                        related_section_id,
+                    )
+                    related_section_id = None
                 event["related_section_id"] = related_section_id
                 changed = True
+                if (
+                    isinstance(related_section_id, int)
+                    and related_section_id > 0
+                ):
+                    mapped_relation_ids.add(related_section_id)
 
             missing_fields = [
                 field_name
@@ -548,7 +752,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         # 使用的映射标签。这样证据属性类型的相容映射不会改变字段缓存仍为
         # 单一 document_type 的约束。
         self._register_mapped_sections(cache, prewarm_by_document)
-        receipt_document_type = self.context_settings[
+        context_settings = getattr(self, "context_settings", None)
+        if context_settings is None:
+            context_settings = load_context_sensitive_settings()
+        receipt_document_type = context_settings[
             "service_receipt_document_type"
         ]
 
@@ -686,7 +893,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             index
             for index, rule in enumerate(self.rules)
             if any(
-                item.get("任务") == "不予处罚合法性审查"
+                isinstance(item.get("任务"), str)
+                and bool(item["任务"].strip())
+                and item["任务"] != CONSISTENCY_TASK
                 and any(item["字段"].values())
                 for item in rule["上下文相关审查事项"]
             )
@@ -709,12 +918,11 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             for rule in self.rules
             for item in rule["上下文相关审查事项"]
             if item.get("任务")
-            and item.get("任务")
-            not in {CONSISTENCY_TASK, "不予处罚合法性审查"}
+            and not isinstance(item.get("任务"), str)
         ]
         if unsupported:
-            raise NotImplementedError(
-                f"存在尚未实现的上下文相关审查任务: {unsupported}"
+            raise TypeError(
+                f"上下文相关审查任务必须是非空字符串: {unsupported}"
             )
 
     def executable_rule_indexes(self) -> List[int]:
@@ -753,12 +961,22 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 raise TypeError(
                     f"{document_type}.{field_name}.required 必须是 bool"
                 )
+            field_category = field_item.get(
+                "字段类别",
+                DEFAULT_FIELD_CATEGORY,
+            )
+            if field_category not in FIELD_CATEGORIES:
+                raise ValueError(
+                    f"{document_type}.{field_name}.字段类别 必须是"
+                    f" {sorted(FIELD_CATEGORIES)} 之一"
+                )
         return field_items
 
     async def _regular_consistency_sources(
         self,
         document_type: str,
         field_items: List[Dict[str, Any]],
+        section_ids: Iterable[int] | None = None,
     ) -> List[ConsistencySource]:
         cache = self.require_structured_field_cache()
         field_names = [item["field"] for item in field_items]
@@ -772,6 +990,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     field_name=item["field"],
                     required=item["required"],
                     value=values[item["field"]],
+                    field_category=item.get(
+                        "字段类别",
+                        DEFAULT_FIELD_CATEGORY,
+                    ),
                 )
                 for item in field_items
             ]
@@ -779,7 +1001,11 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         section_sources = await asyncio.gather(
             *(
                 collect_section(section_id)
-                for section_id in self.document_section_map[document_type]
+                for section_id in (
+                    list(section_ids)
+                    if section_ids is not None
+                    else self.document_section_map[document_type]
+                )
             )
         )
         return [source for sources in section_sources for source in sources]
@@ -788,13 +1014,23 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         self,
         document_type: str,
         field_items: List[Dict[str, Any]],
+        related_section_ids: set[int] | None = None,
     ) -> List[ConsistencySource]:
         cache = self.require_structured_field_cache()
         field_names = [item["field"] for item in field_items]
         sources: List[ConsistencySource] = []
         for receipt_section_id in self.document_section_map[document_type]:
             events = cache.delivery_events(receipt_section_id)
+            if related_section_ids is not None:
+                events = [
+                    event
+                    for event in events
+                    if event.get("related_section_id") in related_section_ids
+                    or event.get("related_section_id") == TECHNICAL_MAPPING_FAILURE
+                ]
             if not events:
+                if related_section_ids is not None:
+                    continue
                 sources.extend(
                     ConsistencySource(
                         document_type=document_type,
@@ -802,6 +1038,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                         field_name=item["field"],
                         required=item["required"],
                         value=None,
+                        field_category=item.get(
+                            "字段类别",
+                            DEFAULT_FIELD_CATEGORY,
+                        ),
                     )
                     for item in field_items
                 )
@@ -833,10 +1073,106 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                         field_name=item["field"],
                         required=item["required"],
                         value=values[item["field"]],
+                        field_category=item.get(
+                            "字段类别",
+                            DEFAULT_FIELD_CATEGORY,
+                        ),
                     )
                     for item in field_items
                 )
         return sources
+
+    async def collect_consistency_source_groups(
+        self,
+        rule: Dict[str, Any],
+        context_item_index: int,
+    ) -> List[List[ConsistencySource]]:
+        context_item = rule["上下文相关审查事项"][context_item_index]
+        available_fields = context_item.get("字段")
+        if not isinstance(available_fields, dict):
+            return [
+                await self.collect_consistency_sources(
+                    rule,
+                    context_item_index,
+                )
+            ]
+
+        context_settings = getattr(self, "context_settings", None)
+        if context_settings is None:
+            context_settings = load_context_sensitive_settings()
+        receipt_document_type = context_settings[
+            "service_receipt_document_type"
+        ]
+        if receipt_document_type not in available_fields:
+            return [
+                await self.collect_consistency_sources(
+                    rule,
+                    context_item_index,
+                )
+            ]
+
+        ordinary_document_types = [
+            document_type
+            for document_type, field_items in available_fields.items()
+            if document_type != receipt_document_type and field_items
+        ]
+        if not ordinary_document_types:
+            return [
+                await self.collect_consistency_sources(
+                    rule,
+                    context_item_index,
+                )
+            ]
+        configured_anchor = context_item.get("送达回证关联文书")
+        if configured_anchor is not None:
+            if not isinstance(configured_anchor, str):
+                raise TypeError("送达回证关联文书必须是字符串")
+            if configured_anchor not in ordinary_document_types:
+                raise ValueError(
+                    "送达回证关联文书未配置在当前上下文事项中: "
+                    f"{configured_anchor}"
+                )
+            anchor_document_types = [configured_anchor]
+        else:
+            anchor_document_types = ordinary_document_types
+
+        regular_sources: List[ConsistencySource] = []
+        for document_type in ordinary_document_types:
+            field_items = self._validate_field_items(
+                document_type,
+                available_fields[document_type],
+            )
+            regular_sources.extend(
+                await self._regular_consistency_sources(
+                    document_type,
+                    field_items,
+                )
+            )
+        receipt_field_items = self._validate_field_items(
+            receipt_document_type,
+            available_fields[receipt_document_type],
+        )
+        groups: List[List[ConsistencySource]] = []
+        anchor_section_ids = [
+            section_id
+            for document_type in anchor_document_types
+            for section_id in self.document_section_map[document_type]
+        ]
+        for anchor_section_id in anchor_section_ids:
+            delivery_sources = await self._delivery_consistency_sources(
+                receipt_document_type,
+                receipt_field_items,
+                {anchor_section_id},
+            )
+            if not delivery_sources:
+                continue
+            group_regular_sources = [
+                source
+                for source in regular_sources
+                if source.section_id == anchor_section_id
+            ]
+            groups.append([*group_regular_sources, *delivery_sources])
+        return groups or [regular_sources]
 
     async def collect_consistency_sources(
         self,
@@ -847,7 +1183,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             context_item_index
         ]["字段"]
 
-        receipt_document_type = self.context_settings[
+        context_settings = getattr(self, "context_settings", None)
+        if context_settings is None:
+            context_settings = load_context_sensitive_settings()
+        receipt_document_type = context_settings[
             "service_receipt_document_type"
         ]
         sources: List[ConsistencySource] = []
@@ -885,6 +1224,8 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     else {}
                 ),
                 "field": source.field_name,
+                "field_category": source.field_category,
+                "required": source.required,
                 "value": source.value,
             }
             for source in sources
@@ -924,6 +1265,17 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             for source in sources
             if source.value is not None
         }
+        structured_fields = [
+            {
+                "document_type": source.document_type,
+                "section_id": source.section_id,
+                "related_section_id": source.related_section_id,
+                "field": source.field_name,
+                "value": source.value,
+            }
+            for source in sources
+            if source.value is not None
+        ]
         return await self.knowledge_service.collect(
             self._knowledge_function_names(context_item),
             KnowledgeContext(
@@ -934,6 +1286,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 document_name="",
                 section_id=0,
                 section_ocr="",
+                structured_fields=structured_fields,
             ),
         )
 
@@ -944,22 +1297,25 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
     ) -> Dict[str, Any]:
         context_item = rule["上下文相关审查事项"][context_item_index]
         task_name = context_item["任务"]
-        sources = await self.collect_consistency_sources(
+        source_groups = await self.collect_consistency_source_groups(
             rule,
             context_item_index,
         )
+        sources = [source for group in source_groups for source in group]
         knowledge_items = await self.collect_external_knowledge(
             rule,
             context_item,
             sources,
         )
-        issues = required_field_issues(sources)
+        issues = []
         if task_name != CONSISTENCY_TASK:
             raise ValueError(f"不支持的上下文相关审查任务: {task_name}")
 
-        comparable = comparable_sources(sources)
-        judgement = None
-        if len(comparable) >= 2:
+        for group in source_groups:
+            issues.extend(required_field_issues(group))
+            comparable = comparable_sources(group)
+            if len(comparable) < 2:
+                continue
             judgement = await self._consistency_judgement(
                 context_item,
                 comparable,
@@ -987,39 +1343,59 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         context_item_index: int,
     ) -> Dict[str, Any]:
         context_item = rule["上下文相关审查事项"][context_item_index]
-        sources = await self.collect_consistency_sources(
+        source_groups = await self.collect_consistency_source_groups(
             rule,
             context_item_index,
         )
+        sources = [source for group in source_groups for source in group]
         knowledge_items = await self.collect_external_knowledge(
             rule,
             context_item,
             sources,
         )
-        compact_sources = [
-            {
-                "document_type": source.document_type,
-                "section_id": source.section_id,
-                "field": source.field_name,
-                "value": source.value,
-            }
-            for source in sources
-        ]
-        prompt = self.require_context_sensitive_agents().build_task_prompt(
-            "contextual_legality_review",
-            review_item=json.dumps(context_item, ensure_ascii=False),
-            sources=json.dumps(compact_sources, ensure_ascii=False),
-            external_knowledge=json.dumps(
-                [item.content for item in knowledge_items],
-                ensure_ascii=False,
-            ),
+        prompt_name = (
+            "contextual_legality_review"
+            if context_item["任务"] == NO_PENALTY_LEGALITY_TASK
+            else "categorized_contextual_review"
         )
         agents = self.require_context_sensitive_agents()
-        result = await agents.ainvoke_contextual_legality_review(
-            prompt,
-            self.settings.agent_recursion_limit,
-        )
-        return {"issues": [issue.model_dump() for issue in result.issues]}
+        issues = []
+        for group in source_groups:
+            compact_sources = [
+                {
+                    "document_type": source.document_type,
+                    "section_id": source.section_id,
+                    **(
+                        {"related_section_id": source.related_section_id}
+                        if source.related_section_id is not None
+                        else {}
+                    ),
+                    "field": source.field_name,
+                    "field_category": source.field_category,
+                    "required": source.required,
+                    "value": source.value,
+                }
+                for source in group
+            ]
+            prompt = self.require_context_sensitive_agents().build_task_prompt(
+                prompt_name,
+                review_item=json.dumps(context_item, ensure_ascii=False),
+                sources=json.dumps(compact_sources, ensure_ascii=False),
+                external_knowledge=json.dumps(
+                    [item.content for item in knowledge_items],
+                    ensure_ascii=False,
+                ),
+            )
+            result = await agents.ainvoke_contextual_legality_review(
+                prompt,
+                self.settings.agent_recursion_limit,
+            )
+            if context_item["任务"] != NO_PENALTY_LEGALITY_TASK:
+                issues.extend(required_field_issues(group))
+            issues.extend(issue.model_dump() for issue in result.issues)
+        return {
+            "issues": issues
+        }
 
     async def run_one_consistency_rule(self, index: int) -> Dict[str, Any]:
         rule = self.rules[index]

@@ -77,6 +77,24 @@ class SectionContentTest(unittest.TestCase):
         self.assertIn("[page_index=2]\n第2页", text)
         self.assertNotIn("[page_index=4]", text)
 
+    def test_ocr_segmented_metadata_reports_its_real_source(self) -> None:
+        dir_info = [
+            {
+                "section_id": 1,
+                "section_name": "当事人身份证信息",
+                "section_page": 0,
+                "catalog_source": "ocr_segmented",
+            }
+        ]
+        ocr_results = [
+            {"image_index": 0, "document_content": "身份证信息"}
+        ]
+
+        text = extract_section_ocr_text(1, dir_info, ocr_results)
+
+        self.assertIn("source=ocr_segmentation", text)
+        self.assertNotIn("source=case_directory", text)
+
     def test_normalizes_string_section_fields(self) -> None:
         string_dir_info = [
             {

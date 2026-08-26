@@ -7,10 +7,32 @@ from utils import load_yaml
 
 
 @cache
+def load_document_mapping_config(
+    config_path: str | Path = DOCUMENT_MAPPING_CONFIG_PATH,
+) -> Dict[str, object]:
+    return load_yaml(config_path)
+
+
+@cache
 def load_compatible_document_type_groups(
     config_path: str | Path = DOCUMENT_MAPPING_CONFIG_PATH,
 ) -> Dict[str, List[str]]:
-    return load_yaml(config_path)["compatible_document_type_groups"]
+    return load_document_mapping_config(config_path)[
+        "compatible_document_type_groups"
+    ]
+
+
+@cache
+def load_excluded_section_title_keywords(
+    config_path: str | Path = DOCUMENT_MAPPING_CONFIG_PATH,
+) -> Dict[str, List[str]]:
+    configured = load_document_mapping_config(config_path).get(
+        "excluded_section_title_keywords",
+        {},
+    )
+    if not isinstance(configured, dict):
+        raise TypeError("excluded_section_title_keywords 必须是对象")
+    return configured
 
 
 def document_types_may_share_section(
@@ -39,6 +61,11 @@ def normalize_document_section_map(
         int(item["section_id"]): index
         for index, item in enumerate(directory)
     }
+    section_names = {
+        int(item["section_id"]): str(item.get("section_name") or "")
+        for item in directory
+    }
+    excluded_keywords = load_excluded_section_title_keywords()
     normalized: Dict[str, List[int]] = {}
     section_owners: Dict[int, List[str]] = {}
     for document_type, section_ids in document_section_map.items():
@@ -62,8 +89,20 @@ def normalize_document_section_map(
                 f"文书映射包含无效 section_id: {document_type}"
             )
 
+        allowed_ids = [
+            section_id
+            for section_id in section_ids
+            if not any(
+                keyword in section_names[section_id]
+                for keyword in excluded_keywords.get(document_type, [])
+            )
+        ]
+        if not allowed_ids:
+            raise ValueError(
+                f"已确认存在的文书未映射到有效章节: {document_type}"
+            )
         ordered_ids = sorted(
-            set(section_ids),
+            set(allowed_ids),
             key=section_order.__getitem__,
         )
         for section_id in ordered_ids:

@@ -12,6 +12,9 @@ class DocumentMappingTest(unittest.TestCase):
             {"section_id": 8, "section_name": "行政处罚决定书"},
             {"section_id": 3, "section_name": "询问笔录"},
             {"section_id": 4, "section_name": "询问笔录"},
+            {"section_id": 21, "section_name": "李中正身份证复印件"},
+            {"section_id": 38, "section_name": "执法证复印件"},
+            {"section_id": 39, "section_name": "法律职业资格证书复印件"},
         ]
 
     def test_one_type_may_map_to_multiple_sections_in_directory_order(
@@ -75,6 +78,15 @@ class DocumentMappingTest(unittest.TestCase):
                 },
                 self.directory,
             )
+
+    def test_identity_mapping_excludes_officer_certificates(self) -> None:
+        mapping = normalize_document_section_map(
+            {"证件信息": [21, 38, 39], "法律职业资格证书": [39]},
+            self.directory,
+        )
+
+        self.assertEqual(mapping["证件信息"], [21])
+        self.assertEqual(mapping["法律职业资格证书"], [39])
 
     def test_unknown_section_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "无效 section_id"):

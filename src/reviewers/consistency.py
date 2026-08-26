@@ -4,6 +4,8 @@ from typing import Any, Dict, Iterable, List
 
 
 CONSISTENCY_TASK = "一致性核查"
+FIELD_CATEGORIES = frozenset({"审查对象", "判断支撑", "结果核对"})
+DEFAULT_FIELD_CATEGORY = "审查对象"
 
 
 @dataclass(frozen=True)
@@ -16,13 +18,14 @@ class ConsistencySource:
     required: bool
     value: Any
     related_section_id: int | None = None
+    field_category: str = DEFAULT_FIELD_CATEGORY
 
     @property
     def source_label(self) -> str:
         label = f"{self.document_type}(section_id={self.section_id}"
         if self.related_section_id is not None:
             label += f", related_section_id={self.related_section_id}"
-        return f"{label}).{self.field_name}"
+        return f"{label}).{self.field_name}[{self.field_category}]"
 
 
 def is_executable_consistency_rule(rule: Dict[str, Any]) -> bool:

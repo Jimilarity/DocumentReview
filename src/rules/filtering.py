@@ -74,14 +74,38 @@ def filter_context_free_rules(
     """为 ContextFree 物化只含可用单文书事项的独立规则集。"""
 
     filtered_rules: List[Dict[str, Any]] = []
+    receipt_document_type = "送达回证"
     for rule in rules:
-        available_documents = {
-            document_name: copy.deepcopy(review_item)
-            for document_name, review_item in rule[
-                "上下文无关审查事项"
-            ].items()
-            if document_presence.get(document_name) is True
-        }
+        configured_documents = rule["上下文无关审查事项"]
+        available_documents = {}
+        ordinary_documents_available = any(
+            document_name != receipt_document_type
+            and document_presence.get(document_name) is True
+            for document_name in configured_documents
+        )
+        for document_name, review_item in configured_documents.items():
+            if document_name != receipt_document_type:
+                if document_presence.get(document_name) is True:
+                    available_documents[document_name] = copy.deepcopy(
+                        review_item
+                    )
+                continue
+            if document_presence.get(receipt_document_type) is not True:
+                continue
+            anchor_document_type = (
+                review_item.get("送达回证关联文书")
+                if isinstance(review_item, dict)
+                else None
+            )
+            if anchor_document_type is not None:
+                if document_presence.get(anchor_document_type) is True:
+                    available_documents[document_name] = copy.deepcopy(
+                        review_item
+                    )
+            elif ordinary_documents_available:
+                available_documents[document_name] = copy.deepcopy(
+                    review_item
+                )
         if not available_documents:
             continue
         filtered_rule = copy.deepcopy(rule)

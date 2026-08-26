@@ -65,17 +65,24 @@ def _merge_field_items(
     incoming: Iterable[Dict[str, Any]],
 ) -> None:
     positions = {
-        item.get("field"): index
+        (
+            item.get("field"),
+            item.get("字段类别", "审查对象"),
+        ): index
         for index, item in enumerate(existing)
         if isinstance(item, dict) and isinstance(item.get("field"), str)
     }
     for field_item in incoming:
         field_name = field_item.get("field")
-        if field_name not in positions:
-            positions[field_name] = len(existing)
+        position_key = (
+            field_name,
+            field_item.get("字段类别", "审查对象"),
+        )
+        if position_key not in positions:
+            positions[position_key] = len(existing)
             existing.append(field_item)
             continue
-        current = existing[positions[field_name]]
+        current = existing[positions[position_key]]
         if isinstance(current.get("required"), bool) and isinstance(
             field_item.get("required"), bool
         ):
@@ -129,6 +136,40 @@ def _normalize_context_fields(
     return normalized
 
 
+def _normalize_legal_query(
+    review_item: Dict[str, Any],
+    aliases: RuleAliases,
+) -> None:
+    query = review_item.get("法条检索查询")
+    if not isinstance(query, dict):
+        return
+    configured_fields = query.get("字段")
+    if not isinstance(configured_fields, list):
+        return
+    normalized_fields = []
+    for field_ref in configured_fields:
+        if not isinstance(field_ref, dict):
+            normalized_fields.append(field_ref)
+            continue
+        normalized_ref = copy.deepcopy(field_ref)
+        document_name = normalized_ref.get("文书")
+        field_name = normalized_ref.get("字段")
+        if isinstance(document_name, str) and document_name.strip():
+            document_name = canonical_document_type(
+                document_name.strip(),
+                aliases,
+            )
+            normalized_ref["文书"] = document_name
+            if isinstance(field_name, str) and field_name.strip():
+                normalized_ref["字段"] = canonical_field_name(
+                    document_name,
+                    field_name.strip(),
+                    aliases,
+                )
+        normalized_fields.append(normalized_ref)
+    query["字段"] = normalized_fields
+
+
 def normalize_rules(
     rules: Iterable[Dict[str, Any]],
     aliases: RuleAliases | None = None,
@@ -144,11 +185,25 @@ def normalize_rules(
                     configured_aliases,
                 )
             )
+            for review_item in rule["上下文无关审查事项"].values():
+                if isinstance(review_item, dict):
+                    if isinstance(review_item.get("送达回证关联文书"), str):
+                        review_item["送达回证关联文书"] = canonical_document_type(
+                            review_item["送达回证关联文书"],
+                            configured_aliases,
+                        )
+                    _normalize_legal_query(review_item, configured_aliases)
         for context_item in rule.get("上下文相关审查事项") or []:
+            if isinstance(context_item.get("送达回证关联文书"), str):
+                context_item["送达回证关联文书"] = canonical_document_type(
+                    context_item["送达回证关联文书"],
+                    configured_aliases,
+                )
             context_fields = context_item.get("字段")
             if isinstance(context_fields, dict):
                 context_item["字段"] = _normalize_context_fields(
                     context_fields,
                     configured_aliases,
                 )
+            _normalize_legal_query(context_item, configured_aliases)
     return normalized_rules
