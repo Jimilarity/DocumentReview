@@ -82,7 +82,8 @@ conda activate doc-review
 ```
 
 在项目根目录创建本地 `.env`。模型调用通过 `langchain-openai` 的
-`ChatOpenAI` 接口完成，至少需要配置：
+`ChatOpenAI` 接口完成。当前代码会直接读取两个思考模式开关，因此它们和模型
+参数一样属于必填项；缺少时会触发 `KeyError`。可使用下面的完整基础配置：
 
 ```dotenv
 REVIEW_VISION_MODEL=
@@ -95,15 +96,32 @@ REVIEW_TEXT_BASE_URL=
 REVIEW_TEXT_API_KEY=
 REVIEW_TEXT_TEMPERATURE=0
 
-# 仅启用 legal_citation_validity 外部知识的规则需要
+# 只能填写小写 true 或 false；不需要模型思考模式时保持 false
+PRE_REVIEW_ENABLE_THINKING=false
+REVIEW_ENABLE_THINKING=false
+```
+
+`PRE_REVIEW_ENABLE_THINKING` 控制 OCR、目录识别和案情提取等预审调用，
+`REVIEW_ENABLE_THINKING` 控制正式规则审查调用。两者只接受小写 `true` 或
+`false`，建议先使用 `false`；只有确认模型服务支持且确实需要思考模式时再改为
+`true`。
+
+版本化法条检索属于可选外部知识。只有规则声明了
+`legal_citation_validity` 且法条服务可用时，才需要追加：
+
+```dotenv
 LAW_RETRIEVAL_BASE_URL=https://review.zfqp.fun/law-api
-LAW_RETRIEVAL_API_KEY=
+LAW_RETRIEVAL_API_KEY=实际密钥
 LAW_RETRIEVAL_TIMEOUT_SECONDS=60
 LAW_RETRIEVAL_MAX_RETRIES=2
 ```
 
-`.env` 已被 Git 忽略，不应提交真实密钥。并发、限流、超时、日志和结果处理等
-可选变量可在部署环境中按需配置。
+如果法条 API 正在维护、未连接所需内网/VPN 或没有密钥，请不要填写一个空的
+`LAW_RETRIEVAL_BASE_URL=`，直接省略整个法条配置块即可。相关规则的法条外部知识
+会记录警告并降级为空，不影响其他审查规则继续执行。
+
+`.env` 已被 Git 忽略，不应提交真实密钥。模型名、地址和密钥必须填写为实际可用
+值；并发、限流、超时、日志和结果处理等其他可选变量可在部署环境中按需配置。
 
 ### 2. 准备检索模型
 

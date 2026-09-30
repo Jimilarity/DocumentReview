@@ -76,7 +76,9 @@ python .\src\main.py --file_path "D:\cases\case.pdf" --rule_type 11110000
 
 `.env` 在导入其他项目模块之前加载，而且使用 `override=True`，即 `.env` 中同名值会覆盖进程原有环境变量。随后程序校验：规则类型是否合法、规则文件是否存在、输入文件是否存在且后缀正确。
 
-运行前至少需要配置文本模型和视觉模型。可在项目根目录创建不含真实示例密钥的 `.env`：
+运行前需要配置文本模型、视觉模型以及两个思考模式开关。当前代码通过
+`os.environ[...]` 直接读取温度和思考模式开关，所以这些字段缺失时不会使用默认
+值，而是立即抛出 `KeyError`。可在项目根目录创建不含真实示例密钥的 `.env`：
 
 ```dotenv
 REVIEW_VISION_MODEL=
@@ -89,10 +91,28 @@ REVIEW_TEXT_BASE_URL=
 REVIEW_TEXT_API_KEY=
 REVIEW_TEXT_TEMPERATURE=0
 
-# 仅使用版本化法条检索的规则需要（该法条api由于维护时常无法使用，且需要使用连接vpn访问内网，可暂时空着）
-LAW_RETRIEVAL_BASE_URL=
-LAW_RETRIEVAL_API_KEY=
+PRE_REVIEW_ENABLE_THINKING=false
+REVIEW_ENABLE_THINKING=false
 ```
+
+`PRE_REVIEW_ENABLE_THINKING` 用于预审阶段，包括 OCR、目录识别、文书分段、案情
+与元数据提取；`REVIEW_ENABLE_THINKING` 用于正式规则审查及结果处理。两项都必须
+存在，并且 `src/utils/common.py::read_env_bool()` 只接受小写 `true` 或 `false`。
+建议默认设为 `false`，确认所用模型服务支持且确实需要思考模式后再设为 `true`。
+
+版本化法条检索不是启动项目的必需条件。只有命中的规则声明了
+`legal_citation_validity` 外部知识，且法条服务、网络/VPN与密钥均可用时，才追加：
+
+```dotenv
+LAW_RETRIEVAL_BASE_URL=https://review.zfqp.fun/law-api
+LAW_RETRIEVAL_API_KEY=实际密钥
+LAW_RETRIEVAL_TIMEOUT_SECONDS=60
+LAW_RETRIEVAL_MAX_RETRIES=2
+```
+
+法条服务不可用时应省略这一整块，不要写空的
+`LAW_RETRIEVAL_BASE_URL=`，否则空字符串会覆盖代码内置的默认地址。未配置密钥或
+请求失败时，该外部知识模块会记录警告并返回空知识，其他规则仍继续审查。
 
 真实凭证只能放在本地 `.env` 或部署环境中，不应写入 README 或提交到 Git。
 

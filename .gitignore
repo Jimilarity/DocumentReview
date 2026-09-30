@@ -8,6 +8,7 @@
 !/.gitignore
 !/README.md
 !/readme-2.md
+!/requirements.txt
 
 !/src/
 !/src/**
