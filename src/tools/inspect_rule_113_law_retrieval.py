@@ -29,7 +29,7 @@ def _rule_113() -> dict[str, Any]:
             for rule in group:
                 if rule.get("序号") == RULE_ID:
                     return rule
-    raise LookupError("all_rules.json 中找不到规则 113")
+    raise LookupError(f"{RULES_PATH.name} 中找不到规则 113")
 
 
 def _context_item(rule: dict[str, Any]) -> dict[str, Any]:
@@ -59,7 +59,7 @@ def _field_values(
 
 
 async def inspect(pdf_path: str) -> dict[str, Any]:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
     cache_paths = get_cache_paths(pdf_path)
     metadata = read_json(cache_paths.metadata)
     directory = read_json(cache_paths.directory)

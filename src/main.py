@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parents[1] / '.env'
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 from constants import (
     ErrorCode,
     NO_CATALOG_SEGMENTATION_SCHEMA_VERSION,
     RESULT_ROOT,
+    RULES_PATH,
 )
 from cache_paths import get_cache_paths, get_result_directory
 from post_review import run_post_review
@@ -73,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
         "后三位为文书子类型"
     )
     )
+    parser.add_argument(
+        "--rules_path",
+        type=str,
+        default=str(RULES_PATH),
+        help="path to the review rules JSON file",
+    )
     return parser
 
 
@@ -88,13 +95,18 @@ def validate_input(file_path: str) -> Path:
 async def main(
     file_path: Optional[str] = None,
     rule_type: int = None,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, Any]:
     if file_path is None or rule_type is None:
         args = build_parser().parse_args()
         file_path = args.file_path
         rule_type = args.rule_type
+        rules_path = args.rules_path
 
     validate_rule_type(rule_type)
+    resolved_rules_path = Path(rules_path).resolve()
+    if not resolved_rules_path.is_file():
+        raise FileNotFoundError(f"规则文件不存在: {resolved_rules_path}")
 
     try:
         input_path = validate_input(file_path)
@@ -109,6 +121,7 @@ async def main(
             pre_review_result = prepare_structured_json(
                 input_path,
                 rule_type,
+                rules_path=resolved_rules_path,
             )
         elif _pre_review_cache_is_reusable(cache_paths):
             print("预处理缓存完整，跳过预处理步骤")
@@ -139,6 +152,7 @@ async def main(
         review_result = await run_review(
             str(input_path),
             rule_type,
+            rules_path=resolved_rules_path,
         )
         context_sensitive_preparation = review_result.get(
             "context_sensitive_preparation",

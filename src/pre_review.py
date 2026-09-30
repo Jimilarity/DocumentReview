@@ -24,7 +24,7 @@ from errors.handler import (
     CURRENT_PDF_PATH,
     build_error_state,
 )
-from utils import atomic_write_json
+from utils import atomic_write_json, strip_thinking_content
 from message_utils import build_vision_message
 
 
@@ -46,6 +46,7 @@ _SECTION_PROBE_OFFSETS = (0, -1, 1, -2, 2)
 _SECTION_OCR_MAX_CHARS = 4000
 _PAGE_PROFILE_HEAD_CHARS = 1000
 _PAGE_PROFILE_TAIL_CHARS = 700
+_MAX_INITIAL_DIRECTORY_SCAN_PAGES = 20
 _DOCUMENT_NUMBER_PATTERN = re.compile(
     r"[^\s，。；：:]{0,24}[〔\[（(]?\d{4}[〕\]）)]?"
     r"[^\s，。；：:]{0,16}(?:第)?\d{1,8}号"
@@ -125,6 +126,7 @@ class DocumentOcrResult(TypedDict):
     document_content: str
     image_path: str
     image_index: int
+    error: Optional[str]
 
 
 class PreReviewState(TypedDict, total=False):
@@ -791,7 +793,7 @@ def _section_result(parsed_result: Any) -> str:
 
 
 def _get_ocr_max_concurrency() -> int:
-    return int(os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "5"))
+    return int(os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "4"))
 
 
 def _get_case_facts_max_attempts() -> int:
@@ -1262,7 +1264,7 @@ async def _extract_document_text(
                         "OCR Agent 返回内容应为字符串，"
                         f"实际为 {type(content).__name__}"
                     )
-                return content
+                return strip_thinking_content(content)
 
             page_token = CURRENT_PAGE_INDEX.set(page_index)
             try:
@@ -1291,9 +1293,17 @@ async def _extract_document_text(
                     "image_index": page_index,
                 }
             except Exception as exc:
-                raise RuntimeError(
-                    f"第 {page_index} 页 OCR 失败: {exc}"
-                ) from exc
+                trace_event(
+                    "document_ocr_page_failed",
+                    page_index=page_index,
+                    error=str(exc),
+                )
+                return {
+                    "document_content": "",
+                    "image_path": image_path,
+                    "image_index": page_index,
+                    "error": str(exc),
+                }
             finally:
                 CURRENT_PAGE_INDEX.reset(page_token)
 
@@ -1586,6 +1596,11 @@ def _route_directory_scan(state: PreReviewState):
         return "build_page_profiles"
     if state.get("catalog_scan_completed", False):
         return "locate_document_sections"
+    if (
+        not state.get("document_catalog")
+        and state["catalog_page_index"] >= _MAX_INITIAL_DIRECTORY_SCAN_PAGES
+    ):
+        return "build_page_profiles"
     if state["catalog_page_index"] < len(state["page_image_paths"]):
         return "classify_directory_page"
     if state.get("document_catalog"):

@@ -16,7 +16,7 @@ from knowledge_retrieval.case_routing import (
     classify_penalty_case,
 )
 from model_config import build_text_model
-from utils import extract_json
+from utils import extract_json, strip_thinking_content
 
 from ..models import KnowledgeContext, KnowledgeItem
 from ..registry import register_knowledge
@@ -41,7 +41,7 @@ class CaseReasonOutput(BaseModel):
 def _message_text(message: Any) -> str:
     content = getattr(message, "content", None)
     if isinstance(content, str):
-        return content
+        return strip_thinking_content(content)
     if isinstance(content, list):
         parts = [
             item["text"]
@@ -50,7 +50,7 @@ def _message_text(message: Any) -> str:
             and isinstance(item.get("text"), str)
         ]
         if parts:
-            return "\n".join(parts)
+            return strip_thinking_content("\n".join(parts))
     return ""
 
 
@@ -238,8 +238,10 @@ def _format_match(match: CatalogMatch) -> KnowledgeItem:
             f"相关区行政主管部门：{match.related_district_authority}\n"
             f"实施范围：{scope}\n"
             f"备注：{remark}\n"
-            "该事项由上述街道办事处承接实施；相关区行政主管部门字段不构成"
-            "对当前处罚主体的排他限定。"
+            "该事项的法定执法主体为实施范围所列街道办事处；相关区行政主管部门"
+            "字段不构成对当前处罚主体的排他限定。街道办事处所属的综合行政执法队"
+            "系其内设、直属执法队伍，不具有独立执法主体资格，须以街道办事处名义"
+            "实施执法。"
         )
     )
 
@@ -250,7 +252,10 @@ async def retrieve_longhua_subdistrict_penalty_items(
 ) -> list[KnowledgeItem]:
     """为“综行罚”街道案卷检索可能匹配的承接行政处罚事项。"""
 
-    case_kind = classify_penalty_case(context.metadata.get("案号"))
+    case_number = _metadata_text(context.metadata, "案号") or _metadata_text(
+        context.metadata, "案件编号"
+    )
+    case_kind = classify_penalty_case(case_number)
     match case_kind:
         case PenaltyCaseKind.SUBDISTRICT:
             pass
@@ -258,11 +263,17 @@ async def retrieve_longhua_subdistrict_penalty_items(
             # 应急、消防、市监及无法识别的案卷暂不使用本目录。
             return []
 
-    if context.document_name != "行政处罚决定书":
+    # 上下文相关审查（如主体合法）没有独立的文书 section，document_name 为空；
+    # 只要能从元信息或共享字段取到案由即可使用本目录。
+    if context.document_name not in ("", "行政处罚决定书"):
         return []
 
-    case_reason = _metadata_text(context.metadata, "案由")
-    if case_reason is None:
+    case_reason = (
+        _metadata_text(context.metadata, "案由")
+        or _metadata_text(context.metadata, "事由")
+        or _metadata_text(context.metadata, "案件名称")
+    )
+    if case_reason is None and context.document_name == "行政处罚决定书":
         case_reason = await extract_case_reason(context.section_ocr)
     if case_reason is None:
         return []

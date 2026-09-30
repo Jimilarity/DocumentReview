@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Iterable, List
 
@@ -15,9 +16,14 @@ from utils import async_read_json
 
 from .base import ReviewSettings
 from .document_mapping import (
+    deterministic_document_section_map,
+    directory_info_for_mapping,
     load_compatible_document_type_groups,
-    normalize_document_section_map,
+    normalize_document_section_map_lenient,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DocumentReviewPreparationService:
@@ -60,40 +66,92 @@ class DocumentReviewPreparationService:
                 ocr_results,
             ),
         )
-        cached_mapping = cache.document_section_map
-        if cached_mapping and all(
-            cached_mapping.get(name) for name in document_names
-        ):
-            return normalize_document_section_map(
-                {
-                    name: cached_mapping[name]
-                    for name in document_names
-                },
+        cached_mapping = cache.payload.get("document_section_map", {})
+        if cached_mapping:
+            try:
+                normalized, dropped = normalize_document_section_map_lenient(
+                    {
+                        name: cached_mapping[name]
+                        for name in document_names
+                        if name in cached_mapping
+                    },
+                    dir_info,
+                    preferred_document_types=document_names,
+                )
+                self._log_dropped_mappings("cached", dropped)
+                return normalized
+            except Exception as exc:
+                LOGGER.warning(
+                    "cached document mapping ignored. file=%s error=%s: %s",
+                    self.file_path,
+                    type(exc).__name__,
+                    exc,
+                )
+                return {}
+
+        try:
+            deterministic_mapping = deterministic_document_section_map(
+                document_names,
                 dir_info,
             )
-        if cached_mapping:
-            raise RuntimeError(
-                "结构化缓存的文书映射范围与本次审查不一致，"
-                "必须重建整份缓存快照"
+        except Exception as exc:
+            LOGGER.warning(
+                "deterministic document mapping failed. file=%s error=%s: %s",
+                self.file_path,
+                type(exc).__name__,
+                exc,
             )
-
-        agents = DocumentMappingAgents()
-        base_prompt = agents.build_task_prompt(
-            "document_section_mapping",
-            meta_info=json.dumps(meta_info, ensure_ascii=False, indent=2),
-            document_names=json.dumps(
-                document_names,
-                ensure_ascii=False,
-                indent=2,
-            ),
-            dir_info=json.dumps(dir_info, ensure_ascii=False, indent=2),
-            compatible_document_type_groups=json.dumps(
-                load_compatible_document_type_groups(),
-                ensure_ascii=False,
-                indent=2,
-            ),
+            deterministic_mapping = {}
+        unresolved_names = [
+            name for name in document_names if name not in deterministic_mapping
+        ]
+        best_mapping, dropped = normalize_document_section_map_lenient(
+            deterministic_mapping,
+            dir_info,
+            preferred_document_types=deterministic_mapping,
         )
-        normalized: Dict[str, List[int]] | None = None
+        self._log_dropped_mappings("deterministic", dropped)
+        if not unresolved_names:
+            self._persist_mapping(cache, best_mapping)
+            return best_mapping
+
+        try:
+            agents = DocumentMappingAgents()
+            base_prompt = agents.build_task_prompt(
+                "document_section_mapping",
+                meta_info=json.dumps(meta_info, ensure_ascii=False, indent=2),
+                document_names=json.dumps(
+                    unresolved_names,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                dir_info=json.dumps(
+                    directory_info_for_mapping(dir_info),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                compatible_document_type_groups=json.dumps(
+                    load_compatible_document_type_groups(),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                deterministic_mapping=json.dumps(
+                    deterministic_mapping,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+        except Exception as exc:
+            LOGGER.warning(
+                "document mapping model setup failed; using deterministic "
+                "mapping. file=%s error=%s: %s",
+                self.file_path,
+                type(exc).__name__,
+                exc,
+            )
+            self._persist_mapping(cache, best_mapping)
+            return best_mapping
+
         validation_error: Exception | None = None
         for attempt in range(1, self.MAPPING_MAX_ATTEMPTS + 1):
             prompt = base_prompt
@@ -112,26 +170,72 @@ class DocumentReviewPreparationService:
                     prompt,
                     self.settings.agent_recursion_limit,
                 )
-                mapping = {
+                model_mapping = {
                     item.document_name: item.section_ids
                     for item in result.mappings
                 }
-                if (
-                    len(result.mappings) != len(document_names)
-                    or set(mapping) != set(document_names)
-                ):
-                    raise ValueError(
-                        "文书章节映射没有覆盖全部已确认存在的文书"
-                    )
-                normalized = normalize_document_section_map(mapping, dir_info)
-                break
-            except (TypeError, ValueError) as exc:
+                mapping = {**deterministic_mapping, **model_mapping}
+                candidate, dropped = normalize_document_section_map_lenient(
+                    mapping,
+                    dir_info,
+                    preferred_document_types=deterministic_mapping,
+                )
+                self._log_dropped_mappings("model", dropped)
+                if len(candidate) > len(best_mapping):
+                    best_mapping = candidate
+                missing_names = [
+                    name for name in document_names if name not in candidate
+                ]
+                if not missing_names:
+                    best_mapping = candidate
+                    break
+                raise ValueError(
+                    "文书章节映射未覆盖: " + ", ".join(missing_names)
+                )
+            except Exception as exc:
                 validation_error = exc
                 if attempt == self.MAPPING_MAX_ATTEMPTS:
-                    raise
+                    LOGGER.warning(
+                        "document mapping degraded after %s attempts. file=%s "
+                        "error=%s: %s",
+                        attempt,
+                        self.file_path,
+                        type(exc).__name__,
+                        exc,
+                    )
 
-        if normalized is None:
-            raise RuntimeError("文书章节映射重试结束但未生成有效结果")
-        cache.initialize_document_section_map(normalized)
-        cache.save()
-        return normalized
+        self._persist_mapping(cache, best_mapping)
+        return best_mapping
+
+    def _persist_mapping(
+        self,
+        cache: StructuredFieldCache,
+        mapping: Dict[str, List[int]],
+    ) -> None:
+        if not mapping:
+            return
+        try:
+            cache.initialize_document_section_map(mapping)
+            cache.save()
+        except Exception as exc:
+            LOGGER.warning(
+                "document mapping cache write skipped. file=%s error=%s: %s",
+                self.file_path,
+                type(exc).__name__,
+                exc,
+            )
+
+    def _log_dropped_mappings(
+        self,
+        source: str,
+        dropped: Dict[str, str],
+    ) -> None:
+        for document_type, reason in dropped.items():
+            LOGGER.warning(
+                "document mapping skipped. file=%s source=%s "
+                "document_type=%s reason=%s",
+                self.file_path,
+                source,
+                document_type,
+                reason,
+            )

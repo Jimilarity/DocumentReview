@@ -14,7 +14,7 @@ from review_config import (
     load_case_level_review_items,
     load_context_sensitive_settings,
 )
-from constants import STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
+from constants import RULES_PATH, STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
 from errors.handler import CURRENT_PDF_PATH
 from structured_field_cache import (
     TECHNICAL_MAPPING_FAILURE,
@@ -24,6 +24,7 @@ from structured_field_cache import (
 from reviewers.context_free import ContextFreeReviewContext
 from reviewers.context_sensitive import (
     ContextSensitiveReviewExecutor,
+    normalize_delivery_extracted_fields,
     validate_extracted_fields,
 )
 from reviewers.consistency import CONSISTENCY_TASK, ConsistencySource
@@ -83,9 +84,7 @@ class ReviewConfigurationTest(unittest.TestCase):
     def test_ordinary_penalty_context_fields_are_all_configured(self) -> None:
         settings = load_context_sensitive_settings()
         rules = (
-            RuleSetBuilder.from_json(
-                SRC_ROOT.parent / "data" / "all_rules.json"
-            )
+            RuleSetBuilder.from_json(RULES_PATH)
             .for_rule_type(0b11110100)
             .build()
             .rules
@@ -116,6 +115,30 @@ class ReviewConfigurationTest(unittest.TestCase):
                 "送达日期": {"type": "datetime"},
             },
         )
+
+    def test_delivery_fields_discard_unknown_keys_and_fill_missing_with_null(self) -> None:
+        specs = {
+            "代收人与受送人关系": {"type": "str"},
+            "送达日期": {"type": "datetime"},
+        }
+
+        normalized = normalize_delivery_extracted_fields(
+            {
+                "代收人与受送达人关系": "受委托人",
+                "送达日期": "2025-03-01",
+                "模型自行增加字段": "无关值",
+            },
+            specs,
+        )
+
+        self.assertEqual(
+            normalized,
+            {
+                "代收人与受送人关系": None,
+                "送达日期": "2025-03-01",
+            },
+        )
+        validate_extracted_fields(normalized, specs)
 
     def test_literal_field_accepts_configured_value_and_null(self) -> None:
         specs = {
@@ -1112,10 +1135,10 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
             [[None, 3], [None, 8]],
         )
 
-    def test_field_category_accepts_three_values_and_rejects_others(self) -> None:
+    def test_field_category_accepts_two_values_and_rejects_others(self) -> None:
         field_items = [
             {"field": "当事人信息", "required": True, "字段类别": category}
-            for category in ["审查对象", "判断支撑", "结果核对"]
+            for category in ["审查对象", "辅助支撑"]
         ]
 
         self.assertEqual(
@@ -1165,14 +1188,14 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
                     field_name="违法事实",
                     required=True,
                     value="某违法行为",
-                    field_category="判断支撑",
+                    field_category="辅助支撑",
                 )
             ],
             [],
         )
 
         sources = agent.build_task_prompt.call_args.kwargs["sources"]
-        self.assertIn('"field_category":"判断支撑"', sources)
+        self.assertIn('"field_category":"辅助支撑"', sources)
 
     async def test_generic_context_task_uses_categorized_prompt(self) -> None:
         executor = ContextSensitiveReviewExecutor.__new__(
@@ -1184,7 +1207,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
             field_name="当事人信息",
             required=False,
             value=[{"当事人名称": "甲公司"}],
-            field_category="结果核对",
+            field_category="辅助支撑",
         )
         executor.collect_consistency_sources = AsyncMock(
             return_value=[source]
@@ -1216,7 +1239,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
             "categorized_contextual_review",
         )
         self.assertIn(
-            '"field_category": "结果核对"',
+            '"field_category": "辅助支撑"',
             agent.build_task_prompt.call_args.kwargs["sources"],
         )
 
@@ -1232,7 +1255,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
                     field_name="违法事实",
                     required=True,
                     value=None,
-                    field_category="判断支撑",
+                    field_category="辅助支撑",
                 ),
                 ConsistencySource(
                     document_type="行政处罚决定书",
@@ -1240,7 +1263,7 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
                     field_name="处罚具体内容",
                     required=False,
                     value=None,
-                    field_category="结果核对",
+                    field_category="辅助支撑",
                 ),
             ]
         )

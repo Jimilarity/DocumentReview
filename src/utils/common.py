@@ -3,6 +3,7 @@ import base64
 import yaml
 import json
 import re
+import tempfile
 import aiofiles
 
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
@@ -63,11 +64,24 @@ def atomic_write_json(path: str | Path, data: Any) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
-        
-    tmp_path.replace(path)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as file:
+            tmp_path = Path(file.name)
+            json.dump(data, file, ensure_ascii=False, indent=2)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
     
 def read_json(path: str | Path) -> Any:
     with open(path, "r", encoding="utf-8") as file:
@@ -91,6 +105,21 @@ def extract_json(text: str) -> Any:
         text = match.group(1).strip()
 
     return json.loads(text)
+
+
+def strip_thinking_content(text: str) -> str:
+    """Remove reasoning text leaked by compatible chat model servers."""
+
+    normalized = text.lower()
+    end_marker = normalized.find("</think>")
+    if end_marker >= 0:
+        return text[end_marker + len("</think>") :].lstrip()
+
+    start_marker = normalized.find("<think>")
+    if start_marker >= 0:
+        return text[:start_marker].rstrip()
+
+    return text
 
 
 def model_to_dict(

@@ -53,7 +53,7 @@ SUBTYPE_MASK = 0b00000111
 
 # File paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RULES_PATH = PROJECT_ROOT / "data" / "all_rules.json"
+RULES_PATH = PROJECT_ROOT / "data" / "all_rules_2026_with_fields.json"
 CACHE_ROOT = PROJECT_ROOT / "cache"
 RESULT_ROOT = PROJECT_ROOT / "results"
 REVIEW_RESULT_FILENAME = "review_results.json"

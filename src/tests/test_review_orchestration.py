@@ -20,7 +20,63 @@ from structured_field_cache import StructuredFieldCache
 
 
 class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
+    def test_mapping_filter_keeps_only_rules_with_mapped_documents(self) -> None:
+        rule_set = RuleSet(
+            rules=[
+                {
+                    "序号": 101,
+                    "上下文无关审查事项": {
+                        "立案审批表": {"审查事项": "检查立案"},
+                    },
+                },
+                {
+                    "序号": 102,
+                    "上下文无关审查事项": {
+                        "结案审批表": {"审查事项": "检查结案"},
+                    },
+                },
+            ]
+        )
+
+        filtered = review._filter_rule_set_by_mapping(
+            ReviewExecutorType.CONTEXT_FREE,
+            rule_set,
+            {"立案审批表": [1]},
+        )
+
+        self.assertEqual(
+            [rule["序号"] for rule in filtered.rules],
+            [101],
+        )
+
     def test_context_free_receipt_uses_only_sections_linked_to_rule_document(self) -> None:
+        executor = ContextFreeReviewExecutor.__new__(ContextFreeReviewExecutor)
+        executor.document_section_map = {
+            "行政处罚决定书": [3],
+            "送达回证": [10, 11],
+        }
+        executor.structured_field_cache = SimpleNamespace(
+            delivery_events=lambda section_id: {
+                10: [{"related_section_id": 3}],
+                11: [{"related_section_id": 8}],
+            }[section_id]
+        )
+        available_documents = {
+            "行政处罚决定书": {"审查事项": "决定书"},
+            "送达回证": {
+                "审查事项": "回证",
+                "送达回证关联文书": "行政处罚决定书",
+            },
+        }
+
+        section_ids = executor._receipt_section_ids_for_rule(
+            {"上下文无关审查事项": available_documents},
+            available_documents,
+        )
+
+        self.assertEqual(section_ids, [10])
+
+    def test_context_free_receipt_requires_explicit_anchor(self) -> None:
         executor = ContextFreeReviewExecutor.__new__(ContextFreeReviewExecutor)
         executor.document_section_map = {
             "行政处罚决定书": [3],
@@ -42,7 +98,7 @@ class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
             available_documents,
         )
 
-        self.assertEqual(section_ids, [10])
+        self.assertEqual(section_ids, [])
 
     def test_context_free_receipt_skips_unmapped_target_document(self) -> None:
         executor = ContextFreeReviewExecutor.__new__(ContextFreeReviewExecutor)
@@ -58,7 +114,10 @@ class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         )
         available_documents = {
             "行政处罚决定书": {"审查事项": "决定书"},
-            "送达回证": {"审查事项": "回证"},
+            "送达回证": {
+                "审查事项": "回证",
+                "送达回证关联文书": "行政处罚决定书",
+            },
         }
 
         section_ids = executor._receipt_section_ids_for_rule(

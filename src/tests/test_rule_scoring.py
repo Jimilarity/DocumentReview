@@ -53,6 +53,14 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
                                 },
                             },
                             {
+                                "序号": 305,
+                                "评分细则": {
+                                    "分值": 2,
+                                    "评查方式": "评分",
+                                    "评查说明": "",
+                                },
+                            },
+                            {
                                 "序号": 601,
                             },
                         ]
@@ -71,6 +79,7 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
                     rule_index=304,
                     score=1.5,
                     explanation="满分2分，扣0.5分，剩余1.5分。",
+                    ai_revision_advice="补充缺失地点并核对原始材料。",
                 )
             ]
         )
@@ -95,11 +104,23 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(results[0]["分数"], 1.5)
+        self.assertEqual(results[0]["规则类别"], "规范性")
+        self.assertEqual(results[0]["规则满分"], 2)
+        self.assertEqual(results[0]["扣分"], 0.5)
         self.assertIn("扣0.5分", results[0]["扣分/加分说明"])
+        self.assertEqual(
+            results[0]["AI修改建议"],
+            "补充缺失地点并核对原始材料。",
+        )
         self.assertIsNone(results[1]["分数"])
+        self.assertIsNone(results[1]["规则满分"])
+        self.assertIsNone(results[1]["扣分"])
         self.assertIn("考查", results[1]["扣分/加分说明"])
         self.assertIsNone(results[2]["分数"])
+        self.assertIsNone(results[2]["扣分"])
         self.assertIn("无对应规则", results[2]["扣分/加分说明"])
+        self.assertIn("AI修改建议", results[1])
+        self.assertIn("AI修改建议", results[2])
 
     async def test_no_issue_numeric_rule_gets_full_score_without_model(self) -> None:
         agents = FakeRuleScoringAgents(RuleScoringOutput(scores=[]))
@@ -113,6 +134,8 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(results[0]["分数"], 2)
+        self.assertEqual(results[0]["扣分"], 0)
+        self.assertEqual(results[0]["AI修改建议"], "无需修改。")
         agents.ainvoke_rule_scoring.assert_not_awaited()
 
     async def test_invalid_model_score_uses_local_fallback(self) -> None:
@@ -123,6 +146,7 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
                         rule_index=304,
                         score=3,
                         explanation="错误分数",
+                        ai_revision_advice="错误建议",
                     )
                 ]
             )
@@ -145,8 +169,36 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(results[0]["分数"], 1.5)
+        self.assertEqual(results[0]["扣分"], 0.5)
         self.assertIn("本地兜底估算", results[0]["扣分/加分说明"])
         self.assertIn("仅供参考", results[0]["扣分/加分说明"])
+        self.assertIn("逐项修正", results[0]["AI修改建议"])
+
+    async def test_empty_explanation_uses_explicit_model_judgment_wording(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            processor = RuleScoreProcessor(
+                rules_path=self.build_rules_file(Path(temp_dir)),
+            )
+            results = await processor.process(
+                [
+                    {
+                        "rule_index": 305,
+                        "issues": [
+                            {"section_ids": [1], "content": "缺少检查地点。"}
+                        ],
+                    }
+                ],
+                use_model=False,
+            )
+
+        self.assertEqual(results[0]["分数"], 1.8)
+        explanation = results[0]["扣分/加分说明"]
+        self.assertIn("该项满分2分", explanation)
+        self.assertIn("没有具体评分细则", explanation)
+        self.assertIn("参考扣分0.2分", explanation)
+        self.assertIn("参考得分1.8分", explanation)
 
 
 if __name__ == "__main__":

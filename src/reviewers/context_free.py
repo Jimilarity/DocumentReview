@@ -8,6 +8,7 @@ from langgraph.types import RunnableConfig
 from agents import ContextFreeReviewAgents, ContextSensitiveReviewAgents
 from constants import ErrorCode
 from external_knowledge import (
+    KNOWLEDGE_UNAVAILABLE_NOTE,
     KnowledgeContext,
     KnowledgeItem,
     KnowledgeService,
@@ -136,15 +137,12 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         anchor_document_type = document_review_rule.get(
             "送达回证关联文书"
         )
-        ordinary_document_types = [
-            document_name
-            for document_name in available_documents
-            if document_name != receipt_document_type
-        ]
-        if not anchor_document_type and len(ordinary_document_types) == 1:
-            anchor_document_type = ordinary_document_types[0]
-        if not isinstance(anchor_document_type, str):
-            return []
+        # 关联文书未显式配置时，视为“查看所有文书”：返回全部送达回证 section。
+        if not isinstance(anchor_document_type, str) or not anchor_document_type.strip():
+            return list(
+                self.document_section_map.get(receipt_document_type, [])
+            )
+        anchor_document_type = anchor_document_type.strip()
         target_section_ids = set(
             self.document_section_map.get(anchor_document_type, [])
         )
@@ -175,15 +173,10 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         receipt_document_type = "送达回证"
         receipt_rule = available_documents.get(receipt_document_type) or {}
         anchor_document_type = receipt_rule.get("送达回证关联文书")
-        ordinary_document_types = [
-            document_name
-            for document_name in available_documents
-            if document_name != receipt_document_type
-        ]
-        if not isinstance(anchor_document_type, str):
-            if len(ordinary_document_types) != 1:
-                return ""
-            anchor_document_type = ordinary_document_types[0]
+        # 关联文书未显式配置时，视为“查看所有文书”：不限定送达事件范围。
+        if not isinstance(anchor_document_type, str) or not anchor_document_type.strip():
+            return ""
+        anchor_document_type = anchor_document_type.strip()
         target_section_ids = set(
             self.document_section_map.get(anchor_document_type, [])
         )
@@ -197,10 +190,16 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
         ]
         if not events:
             return ""
+        target_identity = self._target_document_identity(
+            cache,
+            anchor_document_type,
+            target_section_ids,
+        )
         return json.dumps(
             {
                 "目标文书": anchor_document_type,
                 "目标文书section_ids": sorted(target_section_ids),
+                **target_identity,
                 "本回证中仅审查的送达事件": [
                     {
                         "event_id": event["event_id"],
@@ -212,11 +211,42 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
                 "处理要求": (
                     "送达回证可能包含多个送达事件；只审查上述事件对应的目标文书，"
                     "忽略同一回证中发送给其他文书的事件。"
+                    "请核对回证送达事件填写的送达文书名称/文号，与上述目标文书的"
+                    "名称/文号是否一致。"
                 ),
             },
             ensure_ascii=False,
             indent=2,
         )
+
+    @staticmethod
+    def _target_document_identity(
+        cache: Any,
+        anchor_document_type: str,
+        target_section_ids: set,
+    ) -> Dict[str, Any]:
+        """读取目标文书在 structured cache 中已提取的“文号”字段值。
+
+        目标文书名称即其文书类型；文号字段名随文书类型而异（如“责令改正
+        通知书文号”“行政处罚决定书文号”），故按字段名含“文号”逐一取出，
+        供回证一致性核对使用。没有文号字段的文书返回空列表（尽力而为）。
+        """
+        numbers: List[Dict[str, Any]] = []
+        for section_id in sorted(target_section_ids):
+            section = cache.sections.get(str(int(section_id)), {})
+            for field_name, value in section.items():
+                if isinstance(field_name, str) and "文号" in field_name:
+                    numbers.append(
+                        {
+                            "section_id": int(section_id),
+                            "字段": field_name,
+                            "值": value,
+                        }
+                    )
+        return {
+            "目标文书名称": anchor_document_type,
+            "目标文书文号": numbers,
+        }
 
     def document_names(self) -> List[str]:
         return list(
@@ -484,6 +514,13 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
             )
         knowledge_items = state.get("external_knowledge", [])
         if not knowledge_items:
+            if self.knowledge_function_names(state["document_review_rule"]):
+                prompt = (
+                    f"{prompt}\n\n"
+                    "<external_knowledge_unavailable>\n"
+                    f"{KNOWLEDGE_UNAVAILABLE_NOTE}\n"
+                    "</external_knowledge_unavailable>"
+                )
             return prompt
 
         knowledge_json = json.dumps(
@@ -653,7 +690,7 @@ class ContextFreeReviewExecutor(DocumentReviewExecutor):
                     available_documents,
                 )
                 if document_name == "送达回证"
-                else self.document_section_map[document_name]
+                else self.document_section_map.get(document_name, [])
             )
             if not section_ids:
                 continue

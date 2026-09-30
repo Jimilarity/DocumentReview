@@ -20,7 +20,20 @@ DEFAULT_TOP_K = 3
 DEFAULT_VERSION_K = 7
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
-MAX_QUERY_LENGTH = 300
+MAX_QUERY_LENGTH = 200
+MAX_CONFIGURED_QUERY_LENGTH = 140
+MAX_BASIS_VALUE_LENGTH = 60
+MAX_SUPPORTING_VALUE_LENGTH = 36
+QUERY_FIELD_PRIORITY = {
+    "违法依据": 0,
+    "处罚依据": 0,
+    "责令改正法律依据": 0,
+    "不予处罚依据": 0,
+    "裁量依据": 1,
+    "裁量档次": 2,
+    "违法事实": 3,
+    "违法事实/行为": 3,
+}
 
 _cache: dict[str, list[KnowledgeItem]] = {}
 _cache_lock = Lock()
@@ -96,6 +109,34 @@ def _text_value(metadata: dict[str, Any], field_name: str) -> str | None:
     return None
 
 
+def _compact_query_value(value: Any) -> str:
+    return " ".join(str(value).split())
+
+
+def _join_query_parts(parts: list[str], limit: int) -> str:
+    query = ""
+    for part in parts:
+        separator = "\n" if query else ""
+        remaining = limit - len(query) - len(separator)
+        if remaining <= 0:
+            break
+        compact_part = _compact_query_value(part)
+        query += separator + compact_part[:remaining]
+        if len(compact_part) > remaining:
+            break
+    return query
+
+
+def _configured_query_part(field_name: str, label: str, value: Any) -> str:
+    compact_value = _compact_query_value(value)
+    value_limit = (
+        MAX_BASIS_VALUE_LENGTH
+        if QUERY_FIELD_PRIORITY.get(field_name, 4) <= 1
+        else MAX_SUPPORTING_VALUE_LENGTH
+    )
+    return f"{label}：{compact_value[:value_limit]}"
+
+
 def _query_text(
     context: KnowledgeContext,
     config: dict[str, Any],
@@ -139,9 +180,14 @@ def _query_text(
     if not case_facts:
         raise ValueError("法条检索需要案情")
 
-    parts = [f"案由：{case_reason}", f"案情：{case_facts}"]
+    configured_parts: list[str] = []
+    seen_values: set[tuple[str, str]] = set()
     structured_fields = context.structured_fields
-    for field_ref in _configured_query_fields(config):
+    field_refs = _configured_query_fields(config)
+    field_refs.sort(
+        key=lambda item: QUERY_FIELD_PRIORITY.get(item["字段"], 4)
+    )
+    for field_ref in field_refs:
         field_name = field_ref["字段"]
         document_name = field_ref.get("文书")
         matches = [
@@ -164,18 +210,51 @@ def _query_text(
                 matches = current_matches
         if matches:
             for item in matches:
-                value = item.get("value")
+                value = _compact_query_value(item.get("value"))
+                document_type = str(item.get("document_type") or "")
+                key = (field_name, value)
+                if key in seen_values:
+                    continue
+                seen_values.add(key)
                 label = (
-                    f"{item.get('document_type')}的{field_name}"
-                    if item.get("document_type")
+                    f"{document_type}的{field_name}"
+                    if document_type
                     else field_name
                 )
-                parts.append(f"{label}：{value}")
+                configured_parts.append(
+                    _configured_query_part(field_name, label, value)
+                )
             continue
         value = _text_value(metadata, field_name)
         if value is not None:
-            parts.append(f"{field_name}：{value}")
-    return "\n".join(parts)[:MAX_QUERY_LENGTH], fact_sources
+            compact_value = _compact_query_value(value)
+            key = (field_name, compact_value)
+            if key not in seen_values:
+                seen_values.add(key)
+                configured_parts.append(
+                    _configured_query_part(
+                        field_name,
+                        field_name,
+                        compact_value,
+                    )
+                )
+
+    core_parts = [f"案由：{case_reason}"]
+    compact_case_facts = _compact_query_value(case_facts)
+    if ("案情", compact_case_facts) not in seen_values:
+        core_parts.append(f"案情：{compact_case_facts}")
+
+    if not configured_parts:
+        return _join_query_parts(core_parts, MAX_QUERY_LENGTH), fact_sources
+
+    configured_query = _join_query_parts(
+        configured_parts,
+        MAX_CONFIGURED_QUERY_LENGTH,
+    )
+    remaining = MAX_QUERY_LENGTH - len(configured_query) - 1
+    core_query = _join_query_parts(core_parts, max(remaining, 0))
+    query = "\n".join(part for part in (configured_query, core_query) if part)
+    return query[:MAX_QUERY_LENGTH], fact_sources
 
 
 def _positive_int(config: dict[str, Any], key: str, default: int) -> int:

@@ -1,7 +1,38 @@
-# MacOS
-.DS_Store
+# Repository upload allowlist
+#
+# Only the runtime project, selected rule file, runtime knowledge/cache/output
+# directories, and the two requested README files are published. Everything
+# else at the repository root is kept local unless explicitly allowed below.
+/*
 
-# Local Python environments and caches
+!/.gitignore
+!/README.md
+!/readme-2.md
+
+!/src/
+!/src/**
+
+!/data/
+/data/*
+!/data/all_rules_2026_with_fields.json
+
+!/cache/
+!/cache/**
+!/database/
+!/database/**
+!/knowledge/
+!/knowledge/**
+!/logs/
+!/logs/**
+!/results/
+!/results/**
+
+# Local secrets and environment-specific configuration
+.env
+.env.*
+*.env
+
+# Python/editor caches that may appear inside an allowed directory
 __pycache__/
 *.py[cod]
 *.pyo
@@ -12,39 +43,10 @@ __pycache__/
 .venv/
 venv/
 env/
-
-# Local secrets and runtime config
-.env
-.env.*
-*.env
-
-# Editor settings
 .idea/
 .vscode/
 .codex-backup/
+.DS_Store
 
-
-#pictures
-*.jpg
-
-# Retrieval models, download caches, and offline build checkpoints
-database/model_cache/
-database/longhua_subdistrict_penalty_items/model/
-database/shenzhen_city_management_discretion/items/
-database/shenzhen_city_management_discretion/manifest.json
-
-# Local datasets and generated review artifacts
-/evaluation_dataset/
-/logs/
-/results/
-/cache/*
-!/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/
-/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/*
-!/cache/处罚普通案件(街道全量)20260618_脱敏_严格字段匹配/\[*\]深南招商综行罚字第1101号.json
-*.[pP][dD][fF]
-*.[cC][sS][vV]
-
-/generate_rule_113_report.ps1
-/test.py
-/（已脱敏）市容[2022]深龙华福城综行城罚字第0015号_扫描版.pdf
-/（已脱敏）应急2022-11王宗家_扫描版.pdf
+# Temporary Office lock files
+~$*

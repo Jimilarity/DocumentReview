@@ -1,9 +1,11 @@
+import copy
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, NoReturn
 
 from cache_paths import get_cache_paths, get_result_directory
-from constants import ErrorCode
+from constants import ErrorCode, RULES_PATH
 from errors.exceptions import ReviewError
 from errors.handler import (
     CURRENT_NODE,
@@ -13,10 +15,23 @@ from errors.handler import (
     details_from_exception,
     write_error_report,
 )
-from utils import atomic_write_json
+from directory_info import normalize_directory_info
+from utils import atomic_write_json, read_json
 from .base import ReviewSettings
-from .result_processing import ReviewResultProcessor
+from .result_processing import NO_REVISION_NEEDED, ReviewResultProcessor
 from .rule_scoring import RuleScoreProcessor
+from .section_content import section_page_range
+
+
+REVISION_ADVICE_UNAVAILABLE = "审查结果整理未完成，未生成整体修改建议。"
+LEADING_LOCATION_PATTERN = re.compile(
+    r"^【(?:"
+    r"PDF第(?P<canonical_pdf>\d+)页《(?P<canonical_document>[^》]+)》第(?P<canonical_document_page>\d+)页"
+    r"|《(?P<legacy_document>[^》]+)》PDF第(?P<legacy_pdf>\d+)页(?:（文书第(?P<legacy_document_page>\d+)页）)?"
+    r"|《(?P<document_only>[^》]+)》文书第(?P<document_only_page>\d+)页"
+    r")】"
+)
+DOCUMENT_NAME_PREFIX_PATTERN = re.compile(r"^《(?P<document>[^》]+)》")
 
 
 class ReviewResultCoordinator:
@@ -28,10 +43,12 @@ class ReviewResultCoordinator:
         *,
         settings: ReviewSettings | None = None,
         logger: logging.Logger | None = None,
+        rules_path: str | Path = RULES_PATH,
     ) -> None:
         self.file_path = Path(file_path)
         self.settings = settings or ReviewSettings.from_env()
         self.logger = logger or LOGGER
+        self.rules_path = Path(rules_path)
         self.cache_paths = get_cache_paths(self.file_path)
 
     @property
@@ -62,9 +79,236 @@ class ReviewResultCoordinator:
 
     def save_scored_raw_results(
         self,
-        results: List[Dict[str, Any]],
+        results: Dict[str, Any],
     ) -> None:
         atomic_write_json(self.cache_paths.scored_raw_review_results, results)
+
+    def enrich_issue_locations(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """将 issue 定位统一为“PDF真实页 + 该文书内页码”。"""
+
+        enriched = copy.deepcopy(results)
+        directory_path = getattr(self.cache_paths, "directory", None)
+        ocr_path = getattr(self.cache_paths, "ocr_results", None)
+        if (
+            not isinstance(directory_path, Path)
+            or not directory_path.is_file()
+            or not isinstance(ocr_path, Path)
+            or not ocr_path.is_file()
+        ):
+            return enriched
+
+        dir_info = normalize_directory_info(read_json(directory_path))
+        ocr_results = read_json(ocr_path)
+        directory_by_id = {
+            int(item["section_id"]): item for item in dir_info
+        }
+
+        def section_location(section_id: int) -> Dict[str, Any] | None:
+            section = directory_by_id.get(section_id)
+            if section is None:
+                return None
+            try:
+                start_page, end_page = section_page_range(
+                    section_id,
+                    dir_info,
+                    len(ocr_results),
+                )
+            except (KeyError, StopIteration, TypeError, ValueError):
+                return None
+            document_name = str(
+                section.get("section_name") or "案卷文书"
+            ).strip()
+            return {
+                "section_id": section_id,
+                "document": document_name,
+                "start": start_page,
+                "end": end_page,
+            }
+
+        def parse_leading_location(content: str) -> Dict[str, Any] | None:
+            match = LEADING_LOCATION_PATTERN.match(content)
+            if match is None:
+                return None
+            groups = match.groupdict()
+            pdf_page = groups["canonical_pdf"] or groups["legacy_pdf"]
+            document_page = (
+                groups["canonical_document_page"]
+                or groups["legacy_document_page"]
+                or groups["document_only_page"]
+            )
+            document = (
+                groups["canonical_document"]
+                or groups["legacy_document"]
+                or groups["document_only"]
+            )
+            return {
+                "match": match,
+                "pdf_page": int(pdf_page) if pdf_page else None,
+                "document_page": (
+                    int(document_page) if document_page else None
+                ),
+                "document": document,
+            }
+
+        def canonical_location(
+            document: str,
+            pdf_page: int,
+            document_page: int,
+        ) -> str:
+            return f"【PDF第{pdf_page}页《{document}》第{document_page}页】"
+
+        for result in enriched:
+            for issue in result.get("issues") or []:
+                content = str(issue.get("content") or "").strip()
+                if not content:
+                    continue
+                sections = []
+                for raw_section_id in issue.get("section_ids") or []:
+                    if isinstance(raw_section_id, bool):
+                        continue
+                    try:
+                        section_id = int(raw_section_id)
+                    except (TypeError, ValueError):
+                        continue
+                    location = section_location(section_id)
+                    if location is not None and location not in sections:
+                        sections.append(location)
+                if not sections:
+                    continue
+
+                parsed = parse_leading_location(content)
+                if parsed is not None:
+                    matching_sections = sections
+                    if parsed["pdf_page"] is not None:
+                        page_index = parsed["pdf_page"] - 1
+                        matching_sections = [
+                            section
+                            for section in matching_sections
+                            if section["start"] <= page_index < section["end"]
+                        ]
+                    name_matches = [
+                        section
+                        for section in matching_sections
+                        if section["document"] == parsed["document"]
+                    ]
+                    if name_matches:
+                        matching_sections = name_matches
+                    if len(matching_sections) != 1:
+                        continue
+                    section = matching_sections[0]
+                    pdf_page = parsed["pdf_page"]
+                    if pdf_page is None:
+                        document_page = parsed["document_page"]
+                        if document_page is None:
+                            continue
+                        pdf_page = section["start"] + document_page
+                    document_page = pdf_page - section["start"]
+                    if not 1 <= document_page <= section["end"] - section["start"]:
+                        continue
+                    remainder = content[parsed["match"].end():].lstrip()
+                    issue["content"] = canonical_location(
+                        section["document"],
+                        pdf_page,
+                        document_page,
+                    ) + remainder
+                    continue
+
+                exact_sections = [
+                    section
+                    for section in sections
+                    if section["end"] - section["start"] == 1
+                ]
+                if not exact_sections:
+                    continue
+                leading_name = DOCUMENT_NAME_PREFIX_PATTERN.match(content)
+                if leading_name and len(exact_sections) == 1:
+                    content = content[leading_name.end():].lstrip()
+                prefixes = [
+                    canonical_location(
+                        section["document"],
+                        section["start"] + 1,
+                        1,
+                    )
+                    for section in exact_sections
+                ]
+                issue["content"] = "".join(prefixes) + content
+        return enriched
+
+    @staticmethod
+    def _normalize_number(value: float | int) -> float | int:
+        normalized = round(float(value), 4)
+        return int(normalized) if normalized.is_integer() else normalized
+
+    @classmethod
+    def build_scored_result_payload(
+        cls,
+        scored_results: List[Dict[str, Any]],
+        processing_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        legality_deductions = [
+            float(result["扣分"])
+            for result in scored_results
+            if result.get("规则类别") == "合法性"
+            and isinstance(result.get("扣分"), (int, float))
+            and not isinstance(result.get("扣分"), bool)
+        ]
+        compliance_scores = [
+            (
+                float(result["分数"]),
+                float(result["规则满分"]),
+            )
+            for result in scored_results
+            if result.get("规则类别") == "规范性"
+            and isinstance(result.get("分数"), (int, float))
+            and not isinstance(result.get("分数"), bool)
+            and isinstance(result.get("规则满分"), (int, float))
+            and not isinstance(result.get("规则满分"), bool)
+            and float(result["规则满分"]) > 0
+        ]
+
+        advice = processing_result.get("overall_revision_advice")
+        if not isinstance(advice, str) or not advice.strip():
+            advice = (
+                REVISION_ADVICE_UNAVAILABLE
+                if any(result.get("issues") for result in scored_results)
+                else NO_REVISION_NEEDED
+            )
+
+        def remaining_score(values: List[float]) -> float | int:
+            return cls._normalize_number(max(0.0, 100.0 - sum(values)))
+
+        def compliance_score() -> float | int:
+            if not compliance_scores:
+                return 100
+            actual_score = sum(score for score, _ in compliance_scores)
+            maximum_score = sum(maximum for _, maximum in compliance_scores)
+            return cls._normalize_number(
+                max(0.0, min(100.0, 100.0 * actual_score / maximum_score))
+            )
+
+        legality_score = remaining_score(legality_deductions)
+        normalized_compliance_score = compliance_score()
+        total_score = cls._normalize_number(
+            max(
+                0.0,
+                100.0
+                - (100.0 - float(legality_score))
+                - (100.0 - float(normalized_compliance_score)),
+            )
+        )
+
+        return {
+            "规则评分": scored_results,
+            "评分汇总": {
+                "合法性得分": legality_score,
+                "合规性得分": normalized_compliance_score,
+                "总得分": total_score,
+                "整体修改建议": advice.strip(),
+            },
+        }
 
     def save_processing_result(
         self,
@@ -90,6 +334,7 @@ class ReviewResultCoordinator:
 
     def create_rule_score_processor(self) -> RuleScoreProcessor:
         return RuleScoreProcessor(
+            rules_path=self.rules_path,
             recursion_limit=self.settings.agent_recursion_limit,
             logger=self.logger,
         )
@@ -133,6 +378,7 @@ class ReviewResultCoordinator:
         rule_token = CURRENT_RULE_INDEX.set(None)
         node_token = CURRENT_NODE.set("review_result_coordinator.finalize")
         try:
+            raw_results = self.enrich_issue_locations(raw_results)
             try:
                 self.save_raw_results(raw_results)
             except Exception as exc:
@@ -147,6 +393,16 @@ class ReviewResultCoordinator:
             if processing_enabled:
                 try:
                     processing_result = await self.process_results(raw_results)
+                except Exception as exc:
+                    self.logger.exception(
+                        "review result processing failed unexpectedly; "
+                        "preserving unmerged findings"
+                    )
+                    processing_result = ReviewResultProcessor.build_fallback_output(
+                        ReviewResultProcessor.build_candidates(raw_results),
+                        exc,
+                    )
+                try:
                     self.save_processing_result(processing_result)
                     findings = processing_result["findings"]
                     review_results = findings
@@ -154,17 +410,19 @@ class ReviewResultCoordinator:
                 except Exception as exc:
                     self._raise_result_error(
                         exc,
-                        "review.process_results",
-                        message="逐规则审查完成，但结果处理失败",
+                        "review.write_results",
+                        message="逐规则审查完成，但结果文件写入失败",
                         result_count=len(raw_results),
                     )
             else:
                 findings = []
                 review_results = raw_results
+                processing_result = {
+                    "skipped": True,
+                    "reason": "max_tries_is_zero",
+                }
                 try:
-                    self.save_processing_result(
-                        {"skipped": True, "reason": "max_tries_is_zero"}
-                    )
+                    self.save_processing_result(processing_result)
                     self.save_results(review_results)
                 except Exception as exc:
                     self._raise_result_error(
@@ -179,7 +437,11 @@ class ReviewResultCoordinator:
 
             try:
                 scored_raw_results = await self.score_raw_results(raw_results)
-                self.save_scored_raw_results(scored_raw_results)
+                scored_result_payload = self.build_scored_result_payload(
+                    scored_raw_results,
+                    processing_result,
+                )
+                self.save_scored_raw_results(scored_result_payload)
             except Exception as exc:
                 self._raise_result_error(
                     exc,

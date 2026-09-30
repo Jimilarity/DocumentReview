@@ -10,6 +10,14 @@ from constants import RULES_PATH
 from utils import read_json
 
 
+RULE_CATEGORY_LABELS = {
+    "合法性标准": "合法性",
+    "规范性标准": "规范性",
+    "加减分项": "加减分",
+    "附加项": "附加项",
+}
+
+
 class RuleScoreProcessor:
     """从 raw review results 生成带规则级参考分数的独立结果。"""
 
@@ -27,12 +35,18 @@ class RuleScoreProcessor:
         self.recursion_limit = recursion_limit
         self.max_tries = max_tries
         self.logger = logger or logging.getLogger(__name__)
-        self.rules_by_index = self._load_rules_by_index()
+        (
+            self.rules_by_index,
+            self.rule_categories_by_index,
+        ) = self._load_rules_by_index()
 
-    def _load_rules_by_index(self) -> Dict[int, Dict[str, Any]]:
+    def _load_rules_by_index(
+        self,
+    ) -> tuple[Dict[int, Dict[str, Any]], Dict[int, str]]:
         rule_data = read_json(self.rules_path)
         rules_by_index: Dict[int, Dict[str, Any]] = {}
-        for category in rule_data.values():
+        categories_by_index: Dict[int, str] = {}
+        for category_name, category in rule_data.items():
             if not isinstance(category, dict):
                 continue
             for rules in category.values():
@@ -42,16 +56,53 @@ class RuleScoreProcessor:
                     rule_index = rule.get("序号")
                     if isinstance(rule_index, int):
                         rules_by_index.setdefault(rule_index, rule)
-        return rules_by_index
+                        categories_by_index.setdefault(
+                            rule_index,
+                            RULE_CATEGORY_LABELS.get(
+                                category_name,
+                                category_name,
+                            ),
+                        )
+        return rules_by_index, categories_by_index
 
     @staticmethod
+    def _normalize_number(value: float | int) -> float | int:
+        normalized = round(float(value), 4)
+        return int(normalized) if normalized.is_integer() else normalized
+
+    @classmethod
     def _set_score(
+        cls,
         result: Dict[str, Any],
+        category: str | None,
+        maximum_score: float | int | None,
         score: float | int | None,
         explanation: str,
+        ai_revision_advice: str,
     ) -> None:
+        result["规则类别"] = category
+        result["规则满分"] = maximum_score
         result["分数"] = score
+        result["扣分"] = (
+            None
+            if maximum_score is None or score is None
+            else cls._normalize_number(
+                max(0.0, float(maximum_score) - float(score))
+            )
+        )
         result["扣分/加分说明"] = explanation
+        result["AI修改建议"] = ai_revision_advice
+
+    @staticmethod
+    def _default_ai_revision_advice(result: Dict[str, Any]) -> str:
+        if result.get("error"):
+            return "该规则审查执行异常，请人工复核后再确定修改内容。"
+        if not result.get("issues"):
+            return "无需修改。"
+        return (
+            "请依据本规则列出的各条问题逐项修正文书，并核对修改后的内容"
+            "与案卷事实、原始材料一致。"
+        )
 
     def _prepare_results(
         self,
@@ -62,22 +113,30 @@ class RuleScoreProcessor:
         for result in scored_results:
             rule_index = result.get("rule_index")
             rule = self.rules_by_index.get(rule_index)
+            category = self.rule_categories_by_index.get(rule_index)
             scoring = rule.get("评分细则") if rule else None
             if not scoring:
                 self._set_score(
                     result,
+                    category,
+                    None,
                     None,
                     "评分细则原表无对应规则，分数为空。",
+                    self._default_ai_revision_advice(result),
                 )
                 continue
 
             method = scoring.get("评查方式")
             maximum_score = scoring.get("分值")
+            scoring_explanation = str(scoring.get("评查说明") or "").strip()
             if method != "评分":
                 self._set_score(
                     result,
+                    category,
+                    None,
                     None,
                     f"该规则的评查方式为{method or '未设置'}，不计分。",
+                    self._default_ai_revision_advice(result),
                 )
                 continue
             if not isinstance(maximum_score, (int, float)) or isinstance(
@@ -85,15 +144,21 @@ class RuleScoreProcessor:
             ):
                 self._set_score(
                     result,
+                    category,
+                    None,
                     None,
                     "该规则没有数字分值，暂不计算规则级分数。",
+                    self._default_ai_revision_advice(result),
                 )
                 continue
             if result.get("error"):
                 self._set_score(
                     result,
+                    category,
+                    maximum_score,
                     None,
                     "该规则审查执行异常，无法计算分数。",
+                    self._default_ai_revision_advice(result),
                 )
                 continue
 
@@ -101,11 +166,22 @@ class RuleScoreProcessor:
             if not issues:
                 self._set_score(
                     result,
+                    category,
+                    maximum_score,
                     maximum_score,
                     (
-                        f"该项满分{maximum_score}分，未发现问题，"
-                        f"参考得分{maximum_score}分。"
+                        (
+                            f"该项满分{maximum_score}分，没有具体评分细则；"
+                            "本次未发现问题，无需扣分，"
+                            f"剩余{maximum_score}分。仅供参考。"
+                        )
+                        if not scoring_explanation
+                        else (
+                            f"该项满分{maximum_score}分，未发现问题，"
+                            f"扣0分，剩余{maximum_score}分。仅供参考。"
+                        )
                     ),
+                    "无需修改。",
                 )
                 continue
 
@@ -113,7 +189,8 @@ class RuleScoreProcessor:
                 {
                     "rule_index": rule_index,
                     "maximum_score": maximum_score,
-                    "scoring_explanation": scoring.get("评查说明") or "",
+                    "scoring_explanation": scoring_explanation,
+                    "scoring_explanation_is_empty": not bool(scoring_explanation),
                     "issues": issues,
                 }
             )
@@ -133,11 +210,31 @@ class RuleScoreProcessor:
         if set(scores_by_index) != set(candidates_by_index):
             raise ValueError("评分结果未完整覆盖候选规则或包含未知规则")
         for rule_index, score_item in scores_by_index.items():
-            maximum_score = candidates_by_index[rule_index]["maximum_score"]
+            candidate = candidates_by_index[rule_index]
+            maximum_score = candidate["maximum_score"]
             if not 0 <= score_item.score <= maximum_score:
                 raise ValueError(
                     f"规则 {rule_index} 的分数 {score_item.score} "
                     f"超出 0 至 {maximum_score} 的范围"
+                )
+            explanation = str(score_item.explanation or "")
+            missing_parts = [
+                part
+                for part in ("满分", "扣", "剩余")
+                if part not in explanation
+            ]
+            if missing_parts:
+                raise ValueError(
+                    f"规则 {rule_index} 的扣分说明缺少必要内容: "
+                    f"{missing_parts}"
+                )
+            if (
+                candidate.get("scoring_explanation_is_empty")
+                and "没有具体评分细则" not in explanation
+            ):
+                raise ValueError(
+                    f"规则 {rule_index} 的评查说明为空，扣分说明必须明确写出"
+                    "“没有具体评分细则”"
                 )
 
     async def _score_candidates(
@@ -217,7 +314,12 @@ class RuleScoreProcessor:
                 )
             else:
                 deduction = maximum_score * min(issue_count * 0.1, 1.0)
-                basis = "说明无可直接计算的扣分幅度，按每个问题扣满分10%估算"
+                basis = (
+                    "没有具体评分细则，根据已发现的问题数量，"
+                    "按每个问题扣满分10%估算"
+                    if not explanation.strip()
+                    else "说明无可直接计算的扣分幅度，按每个问题扣满分10%估算"
+                )
 
         score = round(max(0.0, maximum_score - deduction), 4)
         actual_deduction = round(maximum_score - score, 4)
@@ -225,9 +327,13 @@ class RuleScoreProcessor:
             rule_index=candidate["rule_index"],
             score=score,
             explanation=(
-                f"模型评分不可用，采用本地兜底估算：满分"
+                f"模型评分不可用，采用本地兜底估算：该项满分"
                 f"{maximum_score:g}分，{basis}，参考扣分"
                 f"{actual_deduction:g}分，参考得分{score:g}分。仅供参考。"
+            ),
+            ai_revision_advice=(
+                "请依据本规则列出的各条问题逐项修正文书，并核对修改后的内容"
+                "与案卷事实、原始材料一致。"
             ),
         )
 
@@ -269,7 +375,10 @@ class RuleScoreProcessor:
                 continue
             self._set_score(
                 result,
+                self.rule_categories_by_index.get(result.get("rule_index")),
+                self.rules_by_index[result["rule_index"]]["评分细则"]["分值"],
                 score_item.score,
                 score_item.explanation,
+                score_item.ai_revision_advice,
             )
         return scored_results

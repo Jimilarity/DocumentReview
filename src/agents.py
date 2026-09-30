@@ -24,8 +24,9 @@ from agent_trace import (
 from errors.handler import CURRENT_PAGE_INDEX
 from model_config import build_text_model, build_vision_model
 from tools import inspect_current_section_images, inspect_page_image
-from utils import extract_json, load_yaml, read_env_bool
+from utils import extract_json, load_yaml, read_env_bool, strip_thinking_content
 from reviewers.document_mapping import (
+    directory_info_for_mapping,
     document_types_may_share_section,
     load_compatible_document_type_groups,
 )
@@ -174,6 +175,32 @@ class ReviewResult(SchemaModel):
     )
 
 
+def _normalize_review_result_payload(payload: Any) -> Any:
+    """在校验 ReviewResult 前丢弃模型附带的非协议字段。
+
+    审查结果的 issue 协议只允许 section_ids 和 content。模型偶尔会附带
+    detail、reason 等解释字段；这些字段不参与审查结果，应在 Pydantic 校验
+    前移除，避免单个额外字段导致整条规则失败。其他结构错误仍交由模型校验
+    报错，不做兜底猜测。
+    """
+
+    if not isinstance(payload, dict):
+        return payload
+    issues = payload.get("issues")
+    if not isinstance(issues, list):
+        return payload
+    normalized = dict(payload)
+    normalized["issues"] = [
+        (
+            {key: issue[key] for key in ("section_ids", "content") if key in issue}
+            if isinstance(issue, dict)
+            else issue
+        )
+        for issue in issues
+    ]
+    return normalized
+
+
 class ProcessedFindingDraft(SchemaModel):
     source_candidate_ids: list[NonEmptyText] = Field(min_length=1)
     content: NonEmptyText
@@ -189,12 +216,14 @@ class ProcessedFindingDraft(SchemaModel):
 
 class ReviewResultProcessingOutput(SchemaModel):
     findings: list[ProcessedFindingDraft] = Field(default_factory=list)
+    overall_revision_advice: NonEmptyText
 
 
 class RuleScoreDraft(SchemaModel):
     rule_index: int
     score: float
     explanation: NonEmptyText
+    ai_revision_advice: NonEmptyText
 
 
 class RuleScoringOutput(SchemaModel):
@@ -396,7 +425,7 @@ class BaseAgents:
     def message_text(message: Any) -> str:
         content = getattr(message, "content", None)
         if isinstance(content, str):
-            return content
+            return strip_thinking_content(content)
         if isinstance(content, list):
             text_parts = [
                 item["text"]
@@ -405,7 +434,7 @@ class BaseAgents:
                 and isinstance(item.get("text"), str)
             ]
             if text_parts:
-                return "\n".join(text_parts)
+                return strip_thinking_content("\n".join(text_parts))
         raise RuntimeError(
             f"模型返回了无法解析的文本内容: {content!r}"
         )
@@ -1095,9 +1124,10 @@ class StructuredReviewAgents(BaseAgents):
                         HumanMessage(content=current_prompt),
                     ]
                 )
-                return response_model.model_validate(
-                    extract_json(self.message_text(response))
-                )
+                payload = extract_json(self.message_text(response))
+                if response_model is ReviewResult:
+                    payload = _normalize_review_result_payload(payload)
+                return response_model.model_validate(payload)
             except (json.JSONDecodeError, ValidationError, TypeError) as exc:
                 last_error = exc
                 trace_event(
@@ -1177,7 +1207,7 @@ class DocumentMappingAgents(StructuredReviewAgents):
                 indent=2,
             ),
             dir_info=json.dumps(
-                list(dir_info),
+                directory_info_for_mapping(dir_info),
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -1289,7 +1319,9 @@ class ContextFreeReviewAgents(StructuredReviewAgents):
             )
             if not tool_calls:
                 return ReviewResult.model_validate(
-                    extract_json(self.message_text(response))
+                    _normalize_review_result_payload(
+                        extract_json(self.message_text(response))
+                    )
                 )
 
             messages.append(response)

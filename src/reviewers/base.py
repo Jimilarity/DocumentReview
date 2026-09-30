@@ -49,8 +49,8 @@ class SingleRuleState(TypedDict, total=False):
 class ReviewSettings:
     """审查执行参数；未来派生类可以接收不同配置实例。"""
 
-    model_max_concurrency: int = 5
-    task_timeout_seconds: int = 120
+    model_max_concurrency: int = 4
+    task_timeout_seconds: int = 1500
     agent_recursion_limit: int = 20
     result_process_max_tries: int = 3
     result_root: Path = RESULT_ROOT
@@ -61,10 +61,10 @@ class ReviewSettings:
     def from_env(cls) -> "ReviewSettings":
         return cls(
             model_max_concurrency=int(
-                os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "5")
+                os.getenv("REVIEW_MODEL_MAX_CONCURRENCY", "4")
             ),
             task_timeout_seconds=int(
-                os.getenv("REVIEW_TASK_TIMEOUT_SECONDS", "120")
+                os.getenv("REVIEW_TASK_TIMEOUT_SECONDS", "1500")
             ),
             agent_recursion_limit=int(
                 os.getenv("REVIEW_AGENT_RECURSION_LIMIT", "20")

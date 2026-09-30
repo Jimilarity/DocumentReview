@@ -31,11 +31,11 @@ def _load_rule() -> dict[str, Any]:
             for rule in group:
                 if rule.get("序号") == RULE_ID:
                     return rule
-    raise LookupError("all_rules.json 中找不到规则 113")
+    raise LookupError(f"{RULES_PATH.name} 中找不到规则 113")
 
 
 async def validate(pdf_path: str) -> dict[str, Any]:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
     requests: list[dict[str, Any]] = []
     original_request = knowledge._request
 

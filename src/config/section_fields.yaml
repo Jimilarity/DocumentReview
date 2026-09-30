@@ -1,1150 +1,2983 @@
-立案审批表:
+# 依据当前规则库字段自动生成；字段集合与 data/all_rules_2026_with_fields.json 保持一致。
+不予行政处罚决定书:
+  不予处罚依据:
+    eng_name: 不予处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  不予行政处罚决定书文号:
+    eng_name: 不予行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定起诉期限:
+    eng_name: 法定起诉期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: 立案日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议机关名称:
+    eng_name: 行政复议机关名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议申请期限:
+    eng_name: 行政复议申请期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法主体盖章日期/执法主体盖章日期:
+    eng_name: 行政执法主体盖章日期/执法主体盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政诉讼管辖法院名称:
+    eng_name: 行政诉讼管辖法院名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+不予行政处罚决定审批表:
+  不予处罚依据:
+    eng_name: 不予处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  不予行政处罚决定书文号:
+    eng_name: 不予行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人审批意见/审批意见:
+    eng_name: 单位负责人审批意见/审批意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法事项:
+    eng_name: 执法事项
+    notes: 依据当前规则字段表自动配置
+    type: str
+  承办意见:
+    eng_name: 承办意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制机构审核意见/法制审核人员意见/法制审核意见:
+    eng_name: 法制机构审核意见/法制审核人员意见/法制审核意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: 立案日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证情况:
+    eng_name: 陈述、申辩或听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证意见复核及采纳情况:
+    eng_name: 陈述、申辩或听证意见复核及采纳情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+关于公示行政处罚信息的告知:
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+关于延期缴纳罚款的申请书:
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  承诺最晚缴纳日期:
+    eng_name: 承诺最晚缴纳日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请延期天数:
+    eng_name: 申请延期天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请延期理由:
+    eng_name: 申请延期理由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书作出日期:
+    eng_name: 行政处罚决定书作出日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+协助调查通知书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体地址:
+    eng_name: 执法主体地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体联系电话:
+    eng_name: 执法主体联系电话
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+取证记录:
+  制作过程说明:
+    eng_name: 制作过程说明
+    notes: 依据当前规则字段表自动配置
+    type: str
+  取证地点:
+    eng_name: 取证地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  取证时间:
+    eng_name: 取证时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  现场照片/影像资料:
+    eng_name: 现场照片/影像资料
+    notes: 依据当前规则字段表自动配置
+    type: str
+  证明对象或证明内容:
+    eng_name: 证明对象或证明内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+听证报告:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人姓名:
+    eng_name: 听证主持人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人执法证号:
+    eng_name: 听证主持人执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证地点:
+    eng_name: 听证地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证开始时间:
+    eng_name: 听证开始时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证结束时间:
+    eng_name: 听证结束时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处理意见和建议:
+    eng_name: hearing_final_opinion
+    notes: null
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+听证笔录:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人姓名:
+    eng_name: 听证主持人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人执法证号:
+    eng_name: 听证主持人执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证员1姓名:
+    eng_name: 听证员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证员1执法证号:
+    eng_name: 听证员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证地点:
+    eng_name: hearing_location
+    notes: null
+    type: str
+  听证开始时间:
+    eng_name: hearing_start_time
+    notes: null
+    type: datetime
+  听证权利义务告知:
+    eng_name: notice_rights_duty
+    notes: null
+    type: list[dict]
+  听证结束时间:
+    eng_name: hearing_end_time
+    notes: null
+    type: datetime
+  处罚依据:
+    eng_name: penalty_basis
+    notes: null
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人（委托代理人）陈述申辩内容:
+    eng_name: 当事人（委托代理人）陈述申辩内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  案件名称:
+    eng_name: case_name
+    notes: null
+    type: str
+  案件调查人员1工作单位:
+    eng_name: 案件调查人员1工作单位
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件调查人员1职务:
+    eng_name: 案件调查人员1职务
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚听证通知书文号:
+    eng_name: 行政处罚听证通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚建议:
+    eng_name: 行政处罚建议
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: violation_facts
+    notes: null
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+听证通知书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人姓名:
+    eng_name: 听证主持人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证举行时间:
+    eng_name: hearing_time
+    notes: null
+    type: datetime
+  听证地点:
+    eng_name: hearing_location
+    notes: null
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  执法主体地址:
+    eng_name: 执法主体地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体联系电话:
+    eng_name: subject_phone
+    notes: null
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请听证日期:
+    eng_name: apply_date
+    notes: null
+    type: datetime
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚听证通知书文号:
+    eng_name: 行政处罚听证通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+图片文书:
+  图片url:
+    eng_name: 图片url
+    notes: 依据当前规则字段表自动配置
+    type: str
+  图片描述:
+    eng_name: 图片描述
+    notes: 依据当前规则字段表自动配置
+    type: str
+当场行政处罚决定书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  具体承办机构名称:
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受送达人签名或盖章日期:
+    eng_name: 受送达人签名或盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  强制执行方式:
+    eng_name: 强制执行方式
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当场行政处罚决定书文号:
+    eng_name: 当场行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  接受处理日期:
+    eng_name: 接受处理日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  整改报告截止日期:
+    eng_name: 整改报告截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否告知逾期加处罚款:
+    eng_name: 是否告知逾期加处罚款
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否告知逾期强制执行:
+    eng_name: 是否告知逾期强制执行
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否责令改正:
+    eng_name: 是否责令改正
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定起诉期限:
+    eng_name: 法定起诉期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议机关名称:
+    eng_name: 行政复议机关名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议申请期限:
+    eng_name: 行政复议申请期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法主体盖章日期/执法主体盖章日期:
+    eng_name: 行政执法主体盖章日期/执法主体盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政诉讼管辖法院名称:
+    eng_name: 行政诉讼管辖法院名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正内容:
+    eng_name: 责令改正内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正法律依据:
+    eng_name: 责令改正法律依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法地点:
+    eng_name: 违法地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法时间:
+    eng_name: 违法时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证情况:
+    eng_name: 陈述、申辩或听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  限期改正截止日期:
+    eng_name: 限期改正截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+执法证1:
+  执法人员姓名:
+    eng_name: 执法人员姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法区域:
+    eng_name: 执法区域
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法证号:
+    eng_name: 执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法证有效期:
+    eng_name: 执法证有效期
+    notes: 依据当前规则字段表自动配置
+    type: str
+执法证2:
+  执法人员姓名:
+    eng_name: 执法人员姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法证号:
+    eng_name: 执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+授权委托书:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受委托人与自然人的身份证号码:
+    eng_name: 受委托人与自然人的身份证号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受委托人姓名:
+    eng_name: 受委托人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  委托人签名或盖章日期:
+    eng_name: 委托人签名或盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  委托人类型:
+    eng_name: 委托人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  委托开始日期:
+    eng_name: 委托开始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  委托权限:
+    eng_name: 委托权限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  委托结束日期:
+    eng_name: 委托结束日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+放弃陈述、申辩声明:
+  声明人签名:
+    eng_name: 声明人签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  声明人签名日期:
+    eng_name: 声明人签名日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+放弃陈述、申辩权利的声明和尽快作出行政处罚决定申请书:
+  听证条件确认:
+    eng_name: 听证条件确认
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否放弃陈述、申辩权利:
+    eng_name: 是否放弃陈述、申辩权利
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请人（声明人）签名:
+    eng_name: 申请人（声明人）签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请人（声明人）签名日期:
+    eng_name: 申请人（声明人）签名日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+整改复查意见书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  复查意见:
+    eng_name: review_opinion
+    notes: null
+    type: str
+  复查结果:
+    eng_name: review_result
+    notes: null
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正通知书文号:
+    eng_name: 责令改正通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+案件信息:
+  地址:
+    eng_name: 地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件名称:
+    eng_name: 案件名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  状态:
+    eng_name: 状态
+    notes: 依据当前规则字段表自动配置
+    type: str
+  简要情况:
+    eng_name: 简要情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  阶段:
+    eng_name: 阶段
+    notes: 依据当前规则字段表自动配置
+    type: str
+案件共享信息:
+  《不予行政处罚/行政处罚（听证）告知书》文号:
+    eng_name: 《不予行政处罚/行政处罚（听证）告知书》文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  不予处罚依据:
+    eng_name: 不予处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  不予行政处罚决定书文号:
+    eng_name: 不予行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  信息来源:
+    eng_name: 信息来源
+    notes: 依据当前规则字段表自动配置
+    type: str
+  其他执行情况:
+    eng_name: 其他执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  具体承办机构名称:
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期总期数:
+    eng_name: 分期总期数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期缴纳最后一期截止日期:
+    eng_name: 分期缴纳最后一期截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  初步违法事实:
+    eng_name: 初步违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受送达人类型:
+    eng_name: 受送达人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人姓名:
+    eng_name: 听证主持人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证主持人执法证号:
+    eng_name: 听证主持人执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证地点:
+    eng_name: 听证地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证开始时间:
+    eng_name: 听证开始时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证结束时间:
+    eng_name: 听证结束时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  图片url:
+    eng_name: 图片url
+    notes: 依据当前规则字段表自动配置
+    type: str
+  图片描述:
+    eng_name: 图片描述
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  延期缴纳截止日期:
+    eng_name: 延期缴纳截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  强制执行情况:
+    eng_name: 强制执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  强制执行方式:
+    eng_name: 强制执行方式
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体地址:
+    eng_name: 执法主体地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体联系电话:
+    eng_name: 执法主体联系电话
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法事项:
+    eng_name: 执法事项
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留天数:
+    eng_name: 拘留天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留截止日期:
+    eng_name: 拘留截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留起始日期:
+    eng_name: 拘留起始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  整改报告截止日期:
+    eng_name: 整改报告截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件名称:
+    eng_name: 案件名称
+    notes: 依据当前规则字段表自动配置
+    type: str
   案件编号:
-    eng_name: "case_no"
-    type: "str"
-    notes: "案件编号"
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  每期缴纳金额:
+    eng_name: 每期缴纳金额
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定起诉期限:
+    eng_name: 法定起诉期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请听证日期:
+    eng_name: 申请听证日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: 立案日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书作出日期:
+    eng_name: 行政处罚决定书作出日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚听证通知书文号:
+    eng_name: 行政处罚听证通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚建议:
+    eng_name: 行政处罚建议
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚执行情况:
+    eng_name: 行政处罚执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚执行情形:
+    eng_name: 行政处罚执行情形
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议机关名称:
+    eng_name: 行政复议机关名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议申请期限:
+    eng_name: 行政复议申请期限
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政诉讼管辖法院名称:
+    eng_name: 行政诉讼管辖法院名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量依据:
+    eng_name: 裁量依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正内容:
+    eng_name: 责令改正内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正法律依据:
+    eng_name: 责令改正法律依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正违法行为的执行情况:
+    eng_name: 责令改正违法行为的执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正通知书文号:
+    eng_name: 责令改正通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法地点:
+    eng_name: 违法地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法时间:
+    eng_name: 违法时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  送达地址:
+    eng_name: 送达地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证情况:
+    eng_name: 陈述、申辩或听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证意见复核及采纳情况:
+    eng_name: 陈述、申辩或听证意见复核及采纳情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  限期改正截止日期:
+    eng_name: 限期改正截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+案件调查审批表:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  具体承办机构名称:
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人审批意见/审批意见:
+    eng_name: 单位负责人审批意见/审批意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  审核意见:
+    eng_name: 审核意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
   执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法事项:
+    eng_name: 执法事项
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  承办意见:
+    eng_name: 承办意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留天数:
+    eng_name: 拘留天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留截止日期:
+    eng_name: 拘留截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留起始日期:
+    eng_name: 拘留起始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实与证据:
+    eng_name: 违法事实与证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+案件调查报告:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  信息来源:
+    eng_name: 信息来源
+    notes: 依据当前规则字段表自动配置
+    type: str
+  图片描述:
+    eng_name: 图片描述
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: penalty_basis
     notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: "当事人信息列表"
-  案由:
-    eng_name: "case_cause"
-    type: "list[str]"
-    notes: "可能存在多个案由"
-  案件来源:
-    eng_name: "case_source"
-    type: "literal['投诉', '举报', '巡查', '检查', '其他']"
-    notes: "可选项：投诉、举报、巡查、检查、其他"
-  案件简介:
-    eng_name: "case_summary"
-    type: "str"
-    notes: "案件描述信息"
-  承办人意见:
-    eng_name: "case_handler_opinion"
-    type: "str"
-    notes: "建议立案/建议不予立案"
-  承办人具体意见:
-    eng_name: "case_handler_opinion_basis"
-    type: "str"
-    notes: "具体意见"
-  承办人信息:
-    eng_name: "case_handler_info"
-    type: "list[dict]"
-    notes: "承办人信息数组，格式：[{'cert_no':'xxx','name':'xxx','sign_time':'yyyy-mm-dd HH:MM:SS'}]"
-  承办机构信息:
-    eng_name: "case_handle_agency_info"
-    type: "dict"
-    notes: >-
-      "opinion"选项【"拟同意立案"、"拟不同意立案？"】。格式示例：
-      {"opinion":"拟同意立案","sign_time":"yyyy-mm-dd HH:MM:SS","sign_value":""}
-  审批信息:
-    eng_name: "case_approval_info"
-    type: "dict"
-    notes: >-
-      "opinion"选项【"同意立案"、"不同意立案"】。格式示例：
-      {"opinion":"同意立案","sign_time":"yyyy-mm-dd HH:MM:SS","sign_value":""}
-
-
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚建议:
+    eng_name: 行政处罚建议
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量依据:
+    eng_name: discretionary_basis
+    notes: null
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: violation_facts
+    notes: null
+    type: str
+  违法依据:
+    eng_name: violation_basis
+    notes: null
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+法制审核意见书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  具体承办机构名称:
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制审核是否通过:
+    eng_name: 法制审核是否通过
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制机构审核意见/法制审核人员意见/法制审核意见:
+    eng_name: 法制机构审核意见/法制审核人员意见/法制审核意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制机构审核负责人签名日期/法制审核负责人签名日期/法制审核人员签名日期:
+    eng_name: 法制机构审核负责人签名日期/法制审核负责人签名日期/法制审核人员签名日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员意见:
+    eng_name: 行政执法人员意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  送审日期:
+    eng_name: 送审日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+法定代表人身份证明书:
+  姓名:
+    eng_name: 姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人身份证号:
+    eng_name: 法定代表人身份证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+法律适用告知（当场行政处罚决定书）:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件编号:
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法律法规摘要内容:
+    eng_name: 法律法规摘要内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+法律适用告知（行政处罚决定书）:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件编号:
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法律法规摘要内容:
+    eng_name: 法律法规摘要内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正依据:
+    eng_name: 责令改正依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+法律适用告知（行政处罚（听证）告知书）:
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法律法规摘要内容:
+    eng_name: 法律法规摘要内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+法律适用告知（责令改正通知书）:
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法律法规摘要内容:
+    eng_name: 法律法规摘要内容
+    notes: 依据当前规则字段表自动配置
+    type: str
 现场检查（勘验）笔录:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验人1签名:
+    eng_name: 勘验人1签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验人2签名:
+    eng_name: 勘验人2签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验内容:
+    eng_name: 勘验内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验地点:
+    eng_name: 勘验地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验开始时间:
+    eng_name: 勘验开始时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验有关情况:
+    eng_name: 勘验有关情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  勘验结束时间:
+    eng_name: 勘验结束时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  在场人员姓名:
+    eng_name: 在场人员姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
   执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
+    eng_name: subject_name
     notes: null
-  勘验/检查开始时间:
-    eng_name: "inspect_start_time"
-    type: "datetime"
-    notes: null
-  勘验/检查结束时间:
-    eng_name: "inspect_end_time"
-    type: "datetime"
-    notes: null
-  勘验/检查地点:
-    eng_name: "inspect_address"
-    type: "str"
-    notes: null
-  勘验/检查/询问事项:
-    eng_name: "inspect_item"
-    type: "str"
-    notes: null
-  勘验/检查/询问对象信息:
-    eng_name: "inspect_object_info"
-    type: "dict"
-    notes: "只有1个与勘验对象信息表同步"
-  见证人信息:
-    eng_name: "inspect_witness_info"
-    type: "list[dict]"
-    notes: >-
-      允许多个，与涉事人员信息表中同步。格式示例：
-      [{"name":"xxx","card_type":"xxxx","card_no":"xxx","address":"xxx","postal_code":"xxx","cell_phone":"xxx","work_unit":"xxx","sign_value":1,"signed_date":"xxxx"}]
-  执法人员信息:
-    eng_name: "enforcement_officer_info"
-    type: "list[dict]"
-    notes: >-
-      允许多个。格式示例：
-      [{"name":"xxx","legal_rep":"xxxx","id":"xxx","sign_value":1,"signed_date":"xxxx"},{"name":"xxx","legal_rep":"xxxx","id":"xxx","sign_value":1,"signed_date":"xxxx"}]
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
   是否申请回避:
-    eng_name: "request_recusal"
-    type: "bool"
-    notes: ""
-  被申请回避的执法人员姓名:
-    eng_name: "recusal_officer_name"
-    type: "str"
-    notes: "允许多个，多个值以逗号分隔"
-  申请回避的理由:
-    eng_name: "recusal_reason"
-    type: "str"
+    eng_name: request_recusal
+    notes: ''
+    type: bool
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  被勘验人（现场负责人）签名或盖章:
+    eng_name: 被勘验人（现场负责人）签名或盖章
+    notes: 依据当前规则字段表自动配置
+    type: str
+  见证人姓名:
+    eng_name: 见证人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  见证人签名或盖章:
+    eng_name: 见证人签名或盖章
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+立案审批表:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人审批意见/审批意见:
+    eng_name: 单位负责人审批意见/审批意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人签名日期/单位负责人审批签名日期/单位审批负责人签名日期/审批负责人签名日期:
+    eng_name: 单位负责人签名日期/单位负责人审批签名日期/单位审批负责人签名日期/审批负责人签名日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
     notes: null
-  勘验/检查/询问内容:
-    eng_name: "inspect_related_desc"
-    type: "str"
+    type: str
+  承办意见:
+    eng_name: 承办意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件来源:
+    eng_name: case_source
+    notes: 可选项：投诉、举报、巡查、检查、其他
+    type: literal['投诉', '举报', '巡查', '检查', '其他']
+  案件编号:
+    eng_name: case_no
+    notes: 案件编号
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+简易程序备案记录:
+  制作过程说明:
+    eng_name: product_process_desc
     notes: null
-  被勘验/检查/询问人是否签字:
-    eng_name: "inspected_person_sign"
-    type: "bool"
+    type: str
+  取证地点:
+    eng_name: evidence_location
     notes: null
-  被勘验/检查/询问人是否拒签:
-    eng_name: "inspected_person_refusal"
-    type: "bool"
+    type: str
+  取证时间:
+    eng_name: 取证时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
     notes: null
-  被勘验/检查/询问人拒签理由:
-    eng_name: "inspected_person_refusal_reason"
-    type: "str"
+    type: str
+  执法人员1执法证号:
+    eng_name: 执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2执法证号:
+    eng_name: 执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员1签名/执法人员1签名:
+    eng_name: 行政执法人员1签名/执法人员1签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2签名/执法人员2签名:
+    eng_name: 行政执法人员2签名/执法人员2签名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  证据内容（一般是图片）:
+    eng_name: 证据内容（一般是图片）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  证明对象或证明内容:
+    eng_name: 证明对象或证明内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+结案审批表:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  其他执行情况:
+    eng_name: other_execute_desc
     notes: null
-  被勘验/检查/询问人签字日期:
-    eng_name: "inspected_person_sign_date"
-    type: "datetime"
+    type: str
+  强制执行情况:
+    eng_name: enforce_execute_desc
     notes: null
-  记录人姓名:
-    eng_name: "record_person_name"
-    type: "str"
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
     notes: null
-  记录人是否签字:
-    eng_name: "record_person_sign"
-    type: "bool"
+    type: str
+  案件编号:
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: filing_date
     notes: null
-  记录人签字时间:
-    eng_name: "record_person_sign_date"
-    type: "datetime"
+    type: datetime
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  结案类型:
+    eng_name: close_type
     notes: null
-  附件类型，多选:
-    eng_name: "attachment_type"
-    type: "list[str]"
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: penalty_content
     notes: null
-
+    type: str
+  行政处罚决定书文号:
+    eng_name: document_no
+    notes: null
+    type: str
+  行政处罚执行情况:
+    eng_name: penalty_execute_desc
+    notes: null
+    type: str
+  行政处罚执行情形:
+    eng_name: penalty_execute_status
+    notes: null
+    type: str
+  责令改正违法行为的执行情况:
+    eng_name: 责令改正违法行为的执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+营业执照:
+  代表人:
+    eng_name: 代表人
+    notes: 依据当前规则字段表自动配置
+    type: str
+  名称:
+    eng_name: 名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执照类型:
+    eng_name: 执照类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营场所（住所）:
+    eng_name: 经营场所（住所）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营范围:
+    eng_name: 经营范围
+    notes: 依据当前规则字段表自动配置
+    type: str
+  统一社会信用代码:
+    eng_name: 统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚事先（听证）告知书:
+  不予处罚依据:
+    eng_name: no_penalty_basis
+    notes: null
+    type: str
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受送达人签名或盖章日期:
+    eng_name: 受送达人签名或盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  听证申请期限:
+    eng_name: hearing_apply_expire
+    notes: null
+    type: int
+  处罚依据:
+    eng_name: penalty_basis
+    notes: null
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  拘留天数:
+    eng_name: 拘留天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留截止日期:
+    eng_name: 拘留截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留起始日期:
+    eng_name: 拘留起始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否告知听证权利:
+    eng_name: is_hearing_rights_notified
+    notes: null
+    type: str
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案调查日期:
+    eng_name: 立案调查日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚建议:
+    eng_name: 行政处罚建议
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量依据:
+    eng_name: discretionary_basis
+    notes: null
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: violation_facts
+    notes: null
+    type: str
+  违法依据:
+    eng_name: violation_basis
+    notes: null
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述申辩期限:
+    eng_name: statement_defense_expire
+    notes: null
+    type: int
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚决定书:
+  《不予行政处罚/行政处罚（听证）告知书》送达日期/《行政处罚（听证）告知书》送达日期:
+    eng_name: 《不予行政处罚/行政处罚（听证）告知书》送达日期/《行政处罚（听证）告知书》送达日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  具体承办机构名称:
+    eng_name: implement_organ_name
+    notes: null
+    type: str
+  听证处理结果:
+    eng_name: hearing_result
+    notes: null
+    type: str
+  处罚依据:
+    eng_name: penalty_basis
+    notes: null
+    type: str
+  处罚决定种类:
+    eng_name: penalty_type
+    notes: null
+    type: str
+  强制执行方式:
+    eng_name: execute_mode
+    notes: null
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  提出陈述申辩日期:
+    eng_name: statement_apply_date
+    notes: null
+    type: datetime
+  整改报告截止日期:
+    eng_name: rectify_report_deadline
+    notes: null
+    type: datetime
+  是否告知逾期加处罚款:
+    eng_name: 是否告知逾期加处罚款
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否申请听证:
+    eng_name: has_apply_hearing
+    notes: ''
+    type: bool
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定起诉期限:
+    eng_name: apply_sue_limit
+    notes: 单位：天
+    type: int
+  申请听证日期:
+    eng_name: 申请听证日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  组织听证日期:
+    eng_name: 组织听证日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: document_no
+    notes: null
+    type: str
+  行政复议机关名称:
+    eng_name: appeal_organ_name
+    notes: null
+    type: str
+  行政复议申请期限:
+    eng_name: apply_appeal_limit
+    notes: 单位：天
+    type: int
+  行政执法主体盖章日期/执法主体盖章日期:
+    eng_name: 行政执法主体盖章日期/执法主体盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政诉讼管辖法院名称:
+    eng_name: appeal_court_name
+    notes: 深圳市盐田区人民法院
+    type: str
+  裁量依据:
+    eng_name: discretionary_basis
+    notes: null
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正内容:
+    eng_name: 责令改正内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: violation_facts
+    notes: null
+    type: str
+  违法依据:
+    eng_name: violation_basis
+    notes: null
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩处理结果:
+    eng_name: statement_result
+    notes: null
+    type: str
+  陈述、申辩或听证情况:
+    eng_name: 陈述、申辩或听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  限期改正截止日期:
+    eng_name: rectify_deadline
+    notes: null
+    type: datetime
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚决定审批表:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人审批意见/审批意见:
+    eng_name: 单位负责人审批意见/审批意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: penalty_basis
+    notes: null
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
+    notes: null
+    type: str
+  执法事项:
+    eng_name: enforce_item
+    notes: null
+    type: str
+  承办人意见:
+    eng_name: 承办人意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留天数:
+    eng_name: 拘留天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留截止日期:
+    eng_name: 拘留截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留起始日期:
+    eng_name: 拘留起始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制机构审核意见/法制审核人员意见/法制审核意见:
+    eng_name: 法制机构审核意见/法制审核人员意见/法制审核意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法制机构审核负责人签名日期/法制审核负责人签名日期/法制审核人员签名日期:
+    eng_name: 法制机构审核负责人签名日期/法制审核负责人签名日期/法制审核人员签名日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人年龄:
+    eng_name: 自然人年龄
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量依据:
+    eng_name: discretionary_basis
+    notes: null
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: violation_facts
+    notes: null
+    type: str
+  违法依据:
+    eng_name: violation_basis
+    notes: null
+    type: str
+  违法证据:
+    eng_name: illegal_evidence
+    notes: null
+    type: str
+  陈述、申辩或听证情况:
+    eng_name: 陈述、申辩或听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  陈述、申辩或听证意见复核及采纳情况:
+    eng_name: 陈述、申辩或听证意见复核及采纳情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚延期（分期）缴纳罚款决定书:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期总期数:
+    eng_name: 分期总期数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期缴纳最后一期截止日期:
+    eng_name: 分期缴纳最后一期截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  延期缴纳截止日期:
+    eng_name: 延期缴纳截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  每期缴纳金额:
+    eng_name: 每期缴纳金额
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书作出日期:
+    eng_name: 行政处罚决定书作出日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法主体盖章日期/执法主体盖章日期:
+    eng_name: 行政执法主体盖章日期/执法主体盖章日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚延期（分期）缴纳罚款审批表:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期总期数:
+    eng_name: 分期总期数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  分期缴纳最后一期截止日期:
+    eng_name: 分期缴纳最后一期截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  单位负责人审批意见/审批意见:
+    eng_name: 单位负责人审批意见/审批意见
+    notes: 依据当前规则字段表自动配置
+    type: str
+  延期缴纳截止日期:
+    eng_name: 延期缴纳截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  每期缴纳金额:
+    eng_name: 每期缴纳金额
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚执行情况:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  关于先行登记保存、查封、扣押、没收的涉案财物，后续处置凭证名称:
+    eng_name: 关于先行登记保存、查封、扣押、没收的涉案财物，后续处置凭证名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  其他执行情况:
+    eng_name: 其他执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  其他有关行政处罚文书名称:
+    eng_name: 其他有关行政处罚文书名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  强制执行情况:
+    eng_name: 强制执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  申请人民法院强制执行的相关文书名称:
+    eng_name: 申请人民法院强制执行的相关文书名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚执行情况:
+    eng_name: 行政处罚执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚执行情形:
+    eng_name: 行政处罚执行情形
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正违法行为的执行情况:
+    eng_name: 责令改正违法行为的执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚案卷封面:
+  具体承办机构名称:
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件名称:
+    eng_name: 案件名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件编号:
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: 立案日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚决定书文号:
+    eng_name: 行政处罚决定书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚执行情况:
+    eng_name: 行政处罚执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正违法行为的执行情况:
+    eng_name: 责令改正违法行为的执行情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+行政处罚（听证）告知书审批表:
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚依据:
+    eng_name: 处罚依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  处罚决定种类:
+    eng_name: 处罚决定种类
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法事项:
+    eng_name: 执法事项
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留天数:
+    eng_name: 拘留天数
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留截止日期:
+    eng_name: 拘留截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  拘留起始日期:
+    eng_name: 拘留起始日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  权利告知:
+    eng_name: 权利告知
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收违法所得金额（小写）:
+    eng_name: 没收违法所得金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物价值（小写）:
+    eng_name: 没收非法财物价值（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  没收非法财物（实物）:
+    eng_name: 没收非法财物（实物）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立案日期:
+    eng_name: 立案日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  罚款金额（小写）:
+    eng_name: 罚款金额（小写）
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政处罚内容:
+    eng_name: 行政处罚内容
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量依据:
+    eng_name: 裁量依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  裁量档次:
+    eng_name: 裁量档次
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法事实:
+    eng_name: 违法事实
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法依据:
+    eng_name: 违法依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法证据:
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
 询问笔录:
   执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
+    eng_name: subject_name
     notes: null
-  询问开始时间:
-    eng_name: "inquiry_start_time"
-    type: "datetime"
-    notes: null
-  询问结束时间:
-    eng_name: "inquiry_end_time"
-    type: "datetime"
-    notes: null
-  询问地点:
-    eng_name: "inquiry_address"
-    type: "str"
-    notes: null
-  被询问人信息:
-    eng_name: "inquiry_object_info"
-    type: "dict"
-    notes: "1个与涉事人员信息表中同步"
-  见证人信息:
-    eng_name: "inquiry_witness_info"
-    type: "list[dict]"
-    notes: >-
-      允许多个，与涉事人员信息表中同步。格式示例：
-      [{"name":"xxx","card_type":"xxxx","card_no":"xxx","address":"xxx","postal_code":"xxx","cell_phone":"xxx","work_unit":"xxx","sign_value":1,"signed_date":"xxxx"}]
-  执法人员信息:
-    eng_name: "enforcement_officer_info"
-    type: "list[dict]"
-    notes: >-
-      允许多个。格式示例：
-      [{"name":"xxx","legal_rep":"xxxx","id":"xxx","sign_value":1,"signed_date":"xxxx"},{"name":"xxx","legal_rep":"xxxx","id":"xxx","sign_value":1,"signed_date":"xxxx"}]
+    type: str
+  执法人员1姓名:
+    eng_name: 执法人员1姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法人员2姓名:
+    eng_name: 执法人员2姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
   是否申请回避:
-    eng_name: "request_recusal"
-    type: "bool"
-    notes: ""
-  被申请回避的执法人员姓名:
-    eng_name: "recusal_officer_name"
-    type: "str"
-    notes: "允许多个，多个值以逗号分隔"
-  申请回避的理由:
-    eng_name: "recusal_reason"
-    type: "str"
-    notes: null
+    eng_name: request_recusal
+    notes: ''
+    type: bool
+  行政执法人员1执法证号:
+    eng_name: 行政执法人员1执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政执法人员2执法证号:
+    eng_name: 行政执法人员2执法证号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  被询问人与当事人的关系:
+    eng_name: 被询问人与当事人的关系
+    notes: 依据当前规则字段表自动配置
+    type: str
+  被询问人姓名:
+    eng_name: 被询问人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  被询问人签名或盖章:
+    eng_name: 被询问人签名或盖章
+    notes: 依据当前规则字段表自动配置
+    type: str
   询问内容:
-    eng_name: "inquiry_content"
-    type: "str"
+    eng_name: inquiry_content
     notes: null
-  被询问人是否签字:
-    eng_name: "inquired_person_sign"
-    type: "bool"
+    type: str
+  询问地点:
+    eng_name: inquiry_address
     notes: null
-  被询问人是否拒签:
-    eng_name: "inquired_person_refusal"
-    type: "bool"
+    type: str
+  询问开始时间:
+    eng_name: inquiry_start_time
     notes: null
-  被询问人拒签理由:
-    eng_name: "inquired_person_refusal_reason"
-    type: "str"
+    type: datetime
+  询问结束时间:
+    eng_name: inquiry_end_time
     notes: null
-  被询问人签字日期:
-    eng_name: "inquired_person_sign_date"
-    type: "datetime"
-    notes: null
-  记录人姓名:
-    eng_name: "record_person_name"
-    type: "str"
-    notes: null
-  记录人是否签字:
-    eng_name: "record_person_sign"
-    type: "bool"
-    notes: null
-  记录人签字时间:
-    eng_name: "record_person_sign_date"
-    type: "datetime"
-    notes: null
+    type: datetime
   送达地址:
-    eng_name: "service_address"
-    type: "str"
+    eng_name: service_address
     notes: null
-
+    type: str
 责令改正通知书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  责令整改通知书文号:
-    eng_name: "document_no"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: "当事人信息列表"
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  违法依据:
-    eng_name: "violation_basis"
-    type: "str"
-    notes: null
-  证据种类:
-    eng_name: "evidence_categories"
-    type: "list[str]"
-    notes: "常用证据" # 视听资料、询问笔录、现场检查（勘验）笔录
-  其他证据:
-    eng_name: "other_evidence"
-    type: "str"
-    notes: "当证据不在枚举值内，手动填写"
-  责令改正依据:
-    eng_name: "rectify_basis"
-    type: "str"
-    notes: "二十八条之后内容"
-  责令改正内容:
-    eng_name: "rectify_content"
-    type: "list[str]"
-    notes: "多选"
-  限期改正截止日期:
-    eng_name: "rectify_deadline"
-    type: "datetime"
-    notes: null
-  责令改正要求:
-    eng_name: "rectify_requirement"
-    type: "str"
-    notes: null
-  接收处理时间:
-    eng_name: "receive_doc_date"
-    type: "datetime"
-    notes: null
-  承办机构名称:
-    eng_name: "implement_agency_name"
-    type: "str"
-    notes: null
-  是否要提交整改报告:
-    eng_name: "has_submit_report"
-    type: "bool"
-    notes: ""
-  改正报告提交截止时间:
-    eng_name: "submit_report_deadline"
-    type: "datetime"
-    notes: null
-  是否按日记罚:
-    eng_name: "daily_penalty"
-    type: "bool"
-    notes: ""
-  按日记罚法律依据:
-    eng_name: "daily_penalty_basis"
-    type: "str"
-    notes: null
-  行政复议申请期限:
-    eng_name: "apply_appeal_limit"
-    type: "int"
-    notes: "单位：天"
-  行政复议机关名称:
-    eng_name: "appeal_organ_name"
-    type: "str"
-    notes: null
-  法定起诉期限:
-    eng_name: "apply_sue_limit"
-    type: "int"
-    notes: "单位：天"
-  行政诉讼管辖法院名称:
-    eng_name: "appeal_court_name"
-    type: "str"
-    notes: null
-  执法主体联系人:
-    eng_name: "subject_contact"
-    type: "str"
-    notes: null
-  执法主体联系电话:
-    eng_name: "subject_phone"
-    type: "str"
-    notes: null
-  执法主体联系地址:
-    eng_name: "subject_address"
-    type: "str"
-    notes: null
-  行政执法主体印章:
-    eng_name: "subject_sign_value"
-    type: "str"
-    notes: null
-  行政执法主体印日期:
-    eng_name: "subject_sign_date"
-    type: "datetime"
-    notes: null
-  授送人签名:
-    eng_name: "receiver_sign_value"
-    type: "str"
-    notes: null
-  授送人签名时间:
-    eng_name: "receiver_sign_date"
-    type: "datetime"
-    notes: null
-
-行政处罚决定书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  行政处罚决定书文号:
-    eng_name: "document_no"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: "当事人信息列表"
-  立案时间:
-    eng_name: "filing_time"
-    type: "datetime"
-    notes: "调用立案审批表审批签字时间"
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: "可能存在多个案由（多个案由以“-”拼接）"
-  违法时间:
-    eng_name: "violation_date"
-    type: "datetime"
-    notes: null
-  违法地点:
-    eng_name: "violation_location"
-    type: "str"
-    notes: null
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  违法事实/行为:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  证据种类:
-    eng_name: "evidence_categories"
-    type: "list[str]"
-    notes: "多个"
-  其他证据种类:
-    eng_name: "other_evidence"
-    type: "str"
-    notes: null
-  证据名称:
-    eng_name: "evidence_material"
-    type: "str"
-    notes: null
-  违法依据:
-    eng_name: "violation_basis"
-    type: "str"
-    notes: null
-  告知书类型:
-    eng_name: "notice_type"
-    type: "str"
-    notes: null
-  告知书送达日期:
-    eng_name: "notice_service_date"
-    type: "datetime"
-    notes: null
-  陈述申辩与听证权利行使情况:
-    eng_name: "statement_rights_status"
-    type: "str"
-    notes: null
-  提出陈述申辩日期:
-    eng_name: "statement_apply_date"
-    type: "datetime"
-    notes: null
-  陈述、申辩处理结果:
-    eng_name: "statement_result"
-    type: "str"
-    notes: null
-  不予采纳部分及理由:
-    eng_name: "no_adopt_statement_reason"
-    type: "str"
-    notes: null
-  是否申请听证:
-    eng_name: "has_apply_hearing"
-    type: "bool"
-    notes: ""
-  申请听证时间:
-    eng_name: "hearing_apply_date"
-    type: "datetime"
-    notes: null
-  放弃听证时间:
-    eng_name: "waiver_hearing_date"
-    type: "datetime"
-    notes: null
-  组织听证时间:
-    eng_name: "hold_hearing_date"
-    type: "datetime"
-    notes: null
-  听证处理结果:
-    eng_name: "hearing_result"
-    type: "str"
-    notes: null
-  听证不予采纳部分及理由:
-    eng_name: "no_adopt_hearing_reason"
-    type: "str"
-    notes: null
-  是否责令改正:
-    eng_name: "has_rectify"
-    type: "bool"
-    notes: ""
-  责令改正的依据:
-    eng_name: "rectify_basis"
-    type: "str"
-    notes: null
-  责令改正的内容:
-    eng_name: "rectify_content"
-    type: "list[str]"
-    notes: null
-  限期改正截止日期:
-    eng_name: "rectify_deadline"
-    type: "datetime"
-    notes: null
-  接受处理日期:
-    eng_name: "appearance_processing_date"
-    type: "datetime"
-    notes: null
+  个体工商户字号名称:
+    eng_name: 个体工商户字号名称
+    notes: 依据当前规则字段表自动配置
+    type: str
   具体承办机构名称:
-    eng_name: "implement_organ_name"
-    type: "str"
+    eng_name: 具体承办机构名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人类型:
+    eng_name: 当事人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体名称:
+    eng_name: subject_name
     notes: null
+    type: str
+  执法主体地址:
+    eng_name: 执法主体地址
+    notes: 依据当前规则字段表自动配置
+    type: str
+  执法主体联系电话:
+    eng_name: subject_phone
+    notes: null
+    type: str
+  改正内容及要求:
+    eng_name: 改正内容及要求
+    notes: 依据当前规则字段表自动配置
+    type: str
   整改报告截止日期:
-    eng_name: "rectify_report_deadline"
-    type: "datetime"
-    notes: null
-  裁量依据:
-    eng_name: "discretionary_basis"
-    type: "str"
-    notes: null
-  裁量等级:
-    eng_name: "discretionary_level"
-    type: "str"
-    notes: null
-  处罚依据:
-    eng_name: "penalty_basis"
-    type: "str"
-    notes: null
-  处罚具体内容:
-    eng_name: "penalty_info"
-    type: "list[dict]"
-    notes: "可以有多个，从处罚信息表中提取"
-  处罚决定种类:
-    eng_name: "penalty_type"
-    type: "str"
-    notes: null
-  罚款金额大写:
-    eng_name: "fine_amount_word"
-    type: "str"
-    notes: null
-  罚款金额小写:
-    eng_name: "fine_amount_number"
-    type: "float"
-    notes: null
-  罚款缴纳方式:
-    eng_name: "fine_payment_type"
-    type: "str"
-    notes: null
-  罚款缴纳渠道名称:
-    eng_name: "fine_payment_channel_name"
-    type: "str"
-    notes: null
-  非税收入缴纳通知书类型:
-    eng_name: "genera_payment_notice_type"
-    type: "str"
-    notes: null
-  是否按日记罚:
-    eng_name: "daily_penalty"
-    type: "bool"
-    notes: ""
-  按日记罚法律依据:
-    eng_name: "daily_penalty_basis"
-    type: "str"
-    notes: null
-  行政复议申请期限:
-    eng_name: "apply_appeal_limit"
-    type: "int"
-    notes: "单位：天"
-  行政复议机关名称:
-    eng_name: "appeal_organ_name"
-    type: "str"
-    notes: null
+    eng_name: 整改报告截止日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人名称:
+    eng_name: 法人名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法人统一社会信用代码:
+    eng_name: 法人统一社会信用代码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  法定代表人姓名:
+    eng_name: 法定代表人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
   法定起诉期限:
-    eng_name: "apply_sue_limit"
-    type: "int"
-    notes: "单位：天"
+    eng_name: apply_sue_limit
+    notes: 单位：天
+    type: int
+  立即停止违法行为详情:
+    eng_name: 立即停止违法行为详情
+    notes: 依据当前规则字段表自动配置
+    type: str
+  立即改正违法行为详情:
+    eng_name: 立即改正违法行为详情
+    notes: 依据当前规则字段表自动配置
+    type: str
+  经营者姓名:
+    eng_name: 经营者姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人姓名:
+    eng_name: 自然人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  自然人证件号码:
+    eng_name: 自然人证件号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  行政复议机关名称:
+    eng_name: appeal_organ_name
+    notes: null
+    type: str
+  行政复议申请期限:
+    eng_name: apply_appeal_limit
+    notes: 单位：天
+    type: int
   行政诉讼管辖法院名称:
-    eng_name: "appeal_court_name"
-    type: "str"
-    notes: "深圳市盐田区人民法院"
-  是否告知逾期强制执行:
-    eng_name: "default_enforcement_advised"
-    type: "bool"
-    notes: null
-  强制执行方式:
-    eng_name: "execute_mode"
-    type: "str"
-    notes: null
-  执法人员信息:
-    eng_name: "enforce_person_info"
-    type: "list[dict]"
-    notes: >-
-      格式示例：
-      [{"name":"xxx","sign_value":""},{"name":"xxx","sign_value":""}]
-  行政执法主体印章:
-    eng_name: "subject_sign_value"
-    type: "str"
-    notes: null
-  行政执法主体印日期:
-    eng_name: "subject_sign_date"
-    type: "datetime"
-    notes: null
-  授送人签名:
-    eng_name: "receiver_sign_value"
-    type: "str"
-    notes: null
-  授送人签名时间:
-    eng_name: "receiver_sign_date"
-    type: "datetime"
-    notes: null
-
-送达回证:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  案件编号:
-    eng_name: "case_no"
-    type: "str"
-    notes: null
-  文书名称:
-    eng_name: "doc_name"
-    type: "str"
-    notes: null
-  涉事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  送达地址:
-    eng_name: "service_address"
-    type: "str"
-    notes: null
-  代收人姓名:
-    eng_name: "process_agent_name"
-    type: "str"
-    notes: null
-  代收人签名:
-    eng_name: "process_agent_sign_value"
-    type: "str"
-    notes: null
-  代收人签名日期:
-    eng_name: "process_agent_sign_date"
-    type: "datetime"
-    notes: null
-  代收人与受送人关系:
-    eng_name: "principal_agent_relationship"
-    type: "str"
-    notes: null
-  送达日期:
-    eng_name: "service_date"
-    type: "datetime"
-    notes: null
-  送达方式:
-    eng_name: "service_mode"
-    type: "str"
-    notes: ""
-  其他送达方式说明:
-    eng_name: "service_explain"
-    type: "str"
-    notes: null
-  是否拒收:
-    eng_name: "service_refused"
-    type: "bool"
-    notes: null
-  拒收原因:
-    eng_name: "refused_reason"
-    type: "str"
-    notes: null
-  见证人信息:
-    eng_name: "witness_info"
-    type: "list[dict]"
-    notes: >-
-      格式示例：
-      [\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"\n},\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"}\n]
-  送达人信息:
-    eng_name: "process_server_info"
-    type: "list[dict]"
-    notes: >-
-      格式示例：
-      [{"name":"xxx","sign_value":"xxx","sign_date":"xxx"},{"name":"xxx","sign_value":"xxx","sign_date":"xxx"}]
-  备注:
-    eng_name: "remark"
-    type: "str"
-    notes: null
-  受送达人签字:
-    eng_name: "principal_sign"
-    type: "str"
-    notes: null
-  受送达人签字时间:
-    eng_name: "principal_sign_date"
-    type: "datetime"
-    notes: null
-
-结案审批表:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  案件案号:
-    eng_name: "case_no"
-    type: "str"
-    notes: null
-  行政处罚决定书文号:
-    eng_name: "document_no"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: "当事人信息列表"
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: "可能存在多个案由（多个案由以“-”拼接）"
-  立案日期:
-    eng_name: "filing_date"
-    type: "datetime"
-    notes: null
-  处罚日期:
-    eng_name: "penalty_date"
-    type: "datetime"
-    notes: null
-  案件简要情况:
-    eng_name: "case_intro"
-    type: "str"
-    notes: null
-  结案类型:
-    eng_name: "close_type"
-    type: "str"
-    notes: null
-  行政处罚内容:
-    eng_name: "penalty_content"
-    type: "str"
-    notes: null
-  行政处罚执行情形:
-    eng_name: "penalty_execute_status"
-    type: "str"
-    notes: null
-  责令改正违法行为执行情况:
-    eng_name: "correct_execute_desc"
-    type: "str"
-    notes: null
-  行政处罚执行情况:
-    eng_name: "penalty_execute_desc"
-    type: "str"
-    notes: null
-  强制执行情况:
-    eng_name: "enforce_execute_desc"
-    type: "str"
-    notes: null
-  其他执行情况:
-    eng_name: "other_execute_desc"
-    type: "str"
-    notes: null
-  承办人意见:
-    eng_name: "implement_person_opinion"
-    type: "str"
-    notes: null
-  附有关行政处罚文书:
-    eng_name: "penalty_doc"
-    type: "str"
-    notes: null
-  行政复议执行情况:
-    eng_name: "reconsideration_execute_desc"
-    type: "str"
-    notes: null
-  票据号码:
-    eng_name: "invoice_no"
-    type: "str"
-    notes: null
-  罚没收据:
-    eng_name: "fine_receipt"
-    type: "str"
-    notes: null
-  承办人员信息:
-    eng_name: "implement_person_info"
-    type: "list[dict]"
-    notes: "[\n{\"name\":\"xxx\",\"signed\":\"1\",\"sign_date\":\"xxxx\"},\n{\"name\":\"xxx\",\"signed\":\"1\",\"sign_date\":\"xxxx\"}\n]"
-  承办机构意见:
-    eng_name: "implement_agency_opinion"
-    type: "str"
-    notes: null
-  承办机构负责人签名:
-    eng_name: "implement_agency_sign_value"
-    type: "str"
-    notes: null
-  承办机构负责人签名日期:
-    eng_name: "implement_agency_sign_date"
-    type: "datetime"
-    notes: null
-  法制机构审核意见:
-    eng_name: "review_leader_opinion"
-    type: "str"
-    notes: null
-  法制机构负责人签名:
-    eng_name: "review_leader_sign_value"
-    type: "str"
-    notes: null
-  法制机构负责人签名日期:
-    eng_name: "review_leader_sign_date"
-    type: "datetime"
-    notes: null
-  审批负责人审批意见:
-    eng_name: "approving_leader_opinion"
-    type: "str"
-    notes: null
-  审批负责人签名:
-    eng_name: "approving_leader_sign_value"
-    type: "str"
-    notes: null
-  审批负责人签名日期:
-    eng_name: "approving_leader_sign_date"
-    type: "datetime"
-    notes: null
-
-委托书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "principal_info"
-    type: "list[dict]"
-    notes: "委托书中的委托人信息"
-
-证件信息:
-  证件类型:
-    eng_name: "doc_type"
-    type: "str"
-    notes: null
-  证件当事人名称:
-    eng_name: "doc_subject_name"
-    type: "str"
-    notes: null
-  证件号码:
-    eng_name: "doc_card_no"
-    type: "str"
-    notes: null
-  个体工商户组织形式:
-    eng_name: "object_business_form"
-    type: "str"
-    notes: null
-
-取证记录信息:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法人员信息:
-    eng_name: "enforce_officer_info"
-    type: "list[dict]"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  证明对象/内容:
-    eng_name: "evidence_content"
-    type: "str"
-    notes: null
-  记录类型:
-    eng_name: "record_type"
-    type: "str"
-    notes: null
-  记录标题:
-    eng_name: "record_title"
-    type: "str"
-    notes: null
-  附件照片:
-    eng_name: "photo_attachment"
-    type: "list[dict]"
-    notes: null
-
-调查审批信息:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法事项:
-    eng_name: "enforce_item"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  证据种类:
-    eng_name: "evidence_categories"
-    type: "list[str]"
-    notes: null
-  其他证据:
-    eng_name: "other_evidence"
-    type: "str"
-    notes: null
+    eng_name: appeal_court_name
+    notes: null
+    type: str
+  责令改正内容:
+    eng_name: rectify_content
+    notes: 多选
+    type: list[str]
+  责令改正法律依据:
+    eng_name: 责令改正法律依据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  责令改正通知书文号:
+    eng_name: 责令改正通知书文号
+    notes: 依据当前规则字段表自动配置
+    type: str
   违法依据:
-    eng_name: "violation_basis"
-    type: "str"
+    eng_name: violation_basis
     notes: null
-  拟处罚依据:
-    eng_name: "penalty_basis"
-    type: "str"
-    notes: null
-  处罚类别:
-    eng_name: "penalty_category"
-    type: "str"
-    notes: null
-  处罚内容:
-    eng_name: "penalty_content"
-    type: "str"
-    notes: null
-  处罚具体内容:
-    eng_name: "penalty_info"
-    type: "list[dict]"
-    notes: null
-
-案件调查报告:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  调查证据:
-    eng_name: "invest_evidence"
-    type: "str"
-    notes: null
-  违法依据:
-    eng_name: "violation_basis"
-    type: "str"
-    notes: null
-  处罚依据:
-    eng_name: "penalty_basis"
-    type: "str"
-    notes: null
-
-整改复查意见书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法人员信息:
-    eng_name: "enforce_officer_info"
-    type: "list[dict]"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  复查结果:
-    eng_name: "review_result"
-    type: "str"
-    notes: null
-  复查意见:
-    eng_name: "review_opinion"
-    type: "str"
-    notes: null
-
-行政处罚事先（听证）告知书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
-  证据种类:
-    eng_name: "evidence_categories"
-    type: "list[str]"
-    notes: null
-  其他证据:
-    eng_name: "other_evidence"
-    type: "str"
-    notes: null
-  违法依据:
-    eng_name: "violation_basis"
-    type: "str"
-    notes: null
-  处罚依据:
-    eng_name: "penalty_basis"
-    type: "str"
-    notes: null
-  拟处罚决定:
-    eng_name: "proposed_penalty_decision"
-    type: "str"
-    notes: null
-  处罚具体内容:
-    eng_name: "penalty_info"
-    type: "list[dict]"
-    notes: null
-
-放弃陈述、申辩申明:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-听证通知书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-听证笔录:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-听证报告:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法人员信息:
-    eng_name: "enforce_officer_info"
-    type: "list[dict]"
-    notes: null
-  当事人信息:
-    eng_name: "petitioner_name"
-    type: "str"
-    notes: "听证报告中的听证申请人姓名"
-
-法制审核意见:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法人员信息:
-    eng_name: "enforce_officer_info"
-    type: "list[dict]"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-行政处罚决定审批表:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  执法事项:
-    eng_name: "enforce_item"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  违法事实:
-    eng_name: "violation_facts"
-    type: "str"
-    notes: null
+    type: str
+  违法地点:
+    eng_name: 违法地点
+    notes: 依据当前规则字段表自动配置
+    type: str
+  违法时间:
+    eng_name: 违法时间
+    notes: 依据当前规则字段表自动配置
+    type: str
   违法证据:
-    eng_name: "illegal_evidence"
-    type: "str"
+    eng_name: 违法证据
+    notes: 依据当前规则字段表自动配置
+    type: str
+  限期改正截止日期:
+    eng_name: rectify_deadline
     notes: null
-  违法依据:
-    eng_name: "violation_basis"
-    type: "str"
-    notes: null
-  处罚依据:
-    eng_name: "penalty_basis"
-    type: "str"
-    notes: null
-  处罚内容:
-    eng_name: "penalty_content"
-    type: "str"
-    notes: null
-  处罚具体内容:
-    eng_name: "penalty_info"
-    type: "list[dict]"
-    notes: null
-
-简易程序备案记录:
+    type: datetime
+  非法人组织名称:
+    eng_name: 非法人组织名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+身份证:
+  公民身份号码:
+    eng_name: 公民身份号码
+    notes: 依据当前规则字段表自动配置
+    type: str
+  姓名:
+    eng_name: 姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+送达回证:
+  受送达人签名或盖章:
+    eng_name: 受送达人签名或盖章
+    notes: 依据当前规则字段表自动配置
+    type: str
+  受送达人类型:
+    eng_name: 受送达人类型
+    notes: 依据当前规则字段表自动配置
+    type: str
   执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
+    eng_name: subject_name
     notes: null
-  执法人员信息:
-    eng_name: "enforce_officer_info"
-    type: "list[dict]"
+    type: str
+  见证人姓名:
+    eng_name: witness_info
+    notes: 格式示例： [\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"\n},\n{\"name\":\"xxx\",\"sign_value\":\"xxx\",\"sign_date\":\"xxx\"}\n]
+    type: list[dict]
+  送达文书名称:
+    eng_name: 送达文书名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  送达方式:
+    eng_name: service_mode
+    notes: ''
+    type: str
+  送达日期:
+    eng_name: service_date
     notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-  证明对象/内容:
-    eng_name: "evidence_content"
-    type: "str"
-    notes: null
-
-延期执行申请书:
+    type: datetime
+送达地址确认书:
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
   执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-延期执行申请审批表:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-延期执行决定书:
-  执法主体名称:
-    eng_name: "subject_name"
-    type: "str"
-    notes: null
-  当事人信息:
-    eng_name: "party_info"
-    type: "list[dict]"
-    notes: null
-
-处罚信息表:
-  处罚的类型:
-    eng_name: "penalty_type"
-    type: "str"
-    notes: null
-  具体事项:
-    eng_name: "penalty_content"
-    type: "str"
-    notes: null
-  金额小写:
-    eng_name: "penalty_amount_number"
-    type: "float"
-    notes: null
-  处罚期限开始时间:
-    eng_name: "penalty_period_start"
-    type: "datetime"
-    notes: null
-  处罚期限结束时间:
-    eng_name: "penalty_period_end"
-    type: "datetime"
-    notes: null
-
+    eng_name: 执法主体名称
+    notes: 依据当前规则字段表自动配置
+    type: str
+  指定签收人:
+    eng_name: 指定签收人
+    notes: 依据当前规则字段表自动配置
+    type: str
+  是否接受电子送达:
+    eng_name: 是否接受电子送达
+    notes: 依据当前规则字段表自动配置
+    type: str
+  案件编号:
+    eng_name: 案件编号
+    notes: 依据当前规则字段表自动配置
+    type: str
+  送达地址:
+    eng_name: 送达地址
+    notes: 依据当前规则字段表自动配置
+    type: str
 集体讨论笔录:
-  案由:
-    eng_name: "case_cause"
-    type: "str"
-    notes: null
-  讨论结论:
-    eng_name: "final_opinion"
-    type: "str"
-    notes: "集体讨论形成的结论性意见或决定"
-  参与讨论负责人信息:
-    eng_name: "attende_info"
-    type: "list[dict]"
-    notes: "参加集体讨论的行政机关负责人姓名、职务和签名信息"
+  事由:
+    eng_name: 事由
+    notes: 依据当前规则字段表自动配置
+    type: str
+  参加人姓名:
+    eng_name: 参加人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  参加人职务:
+    eng_name: 参加人职务
+    notes: 依据当前规则字段表自动配置
+    type: str
+  当事人姓名:
+    eng_name: 当事人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  日期:
+    eng_name: 日期
+    notes: 依据当前规则字段表自动配置
+    type: str
+  结论性意见:
+    eng_name: final_opinion
+    notes: 集体讨论形成的结论性意见或决定
+    type: str
+  集体讨论主持人姓名:
+    eng_name: 集体讨论主持人姓名
+    notes: 依据当前规则字段表自动配置
+    type: str
+  集体讨论原因:
+    eng_name: 集体讨论原因
+    notes: 依据当前规则字段表自动配置
+    type: str
+  集体讨论开始时间:
+    eng_name: 集体讨论开始时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  集体讨论结束时间:
+    eng_name: 集体讨论结束时间
+    notes: 依据当前规则字段表自动配置
+    type: str
+  （听证主持人汇报）听证情况:
+    eng_name: （听证主持人汇报）听证情况
+    notes: 依据当前规则字段表自动配置
+    type: str
+  （案件承办人汇报）案件情况:
+    eng_name: case_summary
+    notes: 案件描述信息
+    type: str

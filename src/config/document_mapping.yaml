@@ -2,12 +2,310 @@ compatible_document_type_groups:
   evidence_materials:
     - 当事人提交的复制件等证据材料
     - 行政执法人员采集制作的证据材料
-    - 行政相对人的身份证明或主体资格证明材料
+    - 证件信息
+    - 身份证
+    - 取证记录
     - 热敏纸质传真件等难以长期保存的书证
     - 代替书证原件的复印件、照片、节录本
     - 有关部门保管的书证复制件、影印件、抄录件
     - 计算机数据、录音、录像、图片等证据材料
     - 域外及港澳台形成的证据
+
+deterministic_document_matchers:
+  抽样取证记录:
+    title_contains_all:
+      - 抽样取证
+      - 记录
+  当事人提交的复制件等证据材料:
+    section_kinds:
+      - evidence_material
+    subject_roles:
+      - 当事人
+      - 行政相对人
+      - 法定代表人
+      - 委托代理人
+    title_excludes_any:
+      - 执法证
+      - 法律职业资格
+      - 工作证明
+  行政执法人员采集制作的证据材料:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 现场照片
+      - 照片证据
+      - 视听资料
+      - 电子数据
+      - 录音
+      - 录像
+      - 制作过程说明
+    title_excludes_any:
+      - 身份证
+      - 主体资格
+      - 营业执照
+      - 执法证
+      - 法律职业资格
+  计算机数据、录音、录像、图片等证据材料:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 现场照片
+      - 照片证据
+      - 视听资料
+      - 电子数据
+      - 录音
+      - 录像
+      - 图片
+  代替书证原件的复印件、照片、节录本:
+    section_kinds:
+      - evidence_material
+    title_excludes_any:
+      - 视听资料
+      - 电子数据
+      - 录音
+      - 录像
+      - 执法证
+      - 法律职业资格
+      - 工作证明
+  有关部门保管的书证复制件、影印件、抄录件:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 部门保管
+      - 影印件
+      - 抄录件
+  热敏纸质传真件等难以长期保存的书证:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 热敏
+      - 传真件
+  域外及港澳台形成的证据:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 域外
+      - 香港
+      - 澳门
+      - 台湾
+  现场检查（勘验）笔录:
+    title_contains_any:
+      - 现场检查记录
+      - 现场检查笔录
+      - 现场勘验笔录
+      - 现场检查（勘验）笔录
+      - 现场检查(勘验)笔录
+      - 勘验笔录
+  责令改正通知书:
+    title_contains_any:
+      - 责令改正通知书
+      - 责令改正违法行为通知书
+      - 责令改正违法行为决定书
+      - 责令限期改正通知书
+      - 责令限期整改指令书
+      - 责令限期整改通知书
+  送达回证:
+    title_contains_any:
+      - 送达回证
+      - 送达回执
+      - 文书送达回执
+  立案审批表:
+    title_contains_all:
+      - 立案
+      - 审批
+  结案审批表:
+    title_contains_all:
+      - 结案
+      - 审批
+  行政处罚决定书:
+    title_contains_any:
+      - 行政处罚决定书
+      - 当场行政处罚决定书
+    title_excludes_any:
+      - 审批表
+  行政处罚事先（听证）告知书:
+    title_contains_any:
+      - 行政处罚事先告知书
+      - 行政处罚听证告知书
+      - 行政处罚事先（听证）告知书
+      - 行政处罚（听证）告知书
+      - 行政处罚告知书
+  法制审核意见书:
+    title_contains_all:
+      - 法制审核
+  听证通知书:
+    title_contains_all:
+      - 听证
+      - 通知
+  听证笔录:
+    title_contains_all:
+      - 听证
+      - 笔录
+  听证报告:
+    title_contains_all:
+      - 听证
+      - 报告
+  集体讨论笔录:
+    title_contains_all:
+      - 集体讨论
+  询问笔录:
+    title_contains_any:
+      - 询问笔录
+      - 调查询问笔录
+  授权委托书:
+    title_contains_any:
+      - 委托书
+      - 授权委托书
+  简易程序备案记录:
+    title_contains_all:
+      - 简易
+      - 备案
+  案件调查报告:
+    title_contains_any:
+      - 案件调查报告
+      - 案件调查终结报告
+      - 调查终结报告
+  取证记录:
+    section_kinds:
+      - evidence_material
+    title_excludes_any:
+      - 身份证
+      - 主体资格
+      - 营业执照
+      - 执法证
+      - 法律职业资格
+      - 工作证明
+      - 授权委托
+    material_excludes_any:
+      - 身份证
+      - 主体资格
+      - 营业执照
+      - 执法证
+      - 法律职业资格
+      - 工作证明
+  证件信息:
+    section_kinds:
+      - evidence_material
+    title_contains_any:
+      - 身份证
+      - 主体资格证明
+      - 营业执照
+    title_excludes_any:
+      - 执法证
+      - 法律职业资格
+  催告书:
+    title_contains_any:
+      - 催告书
+      - 履行行政决定催告书
+  先行登记保存证据通知书（决定书）:
+    title_contains_all:
+      - 先行登记保存
+      - 证据
+    title_contains_any:
+      - 通知书
+      - 决定书
+  抽样取证通知书:
+    title_contains_all:
+      - 抽样取证
+      - 通知书
+  放弃陈述、申辩声明:
+    title_contains_any:
+      - 放弃陈述、申辩声明
+      - 放弃陈述申辩声明
+      - 放弃陈述、申辩申明
+  整改复查意见书:
+    title_contains_any:
+      - 整改复查意见书
+      - 复查意见书
+  行政处罚决定审批表:
+    title_contains_all:
+      - 行政处罚
+      - 决定
+      - 审批
+  行政处罚延期（分期）缴纳罚款决定书:
+    title_contains_all:
+      - 延期
+      - 罚款
+      - 决定书
+  行政处罚延期（分期）缴纳罚款审批表:
+    title_contains_all:
+      - 延期
+      - 罚款
+      - 审批
+  执行协议:
+    title_contains_all:
+      - 执行
+      - 协议
+  查封（扣押）决定书:
+    title_contains_any:
+      - 查封（扣押）决定书
+      - 查封扣押决定书
+      - 查封决定书
+      - 扣押决定书
+  查封（扣押）清单:
+    title_contains_any:
+      - 查封（扣押）清单
+      - 查封扣押清单
+      - 查封清单
+      - 扣押清单
+  延长行政强制措施期限决定书:
+    title_contains_all:
+      - 延长
+      - 强制措施
+      - 期限
+      - 决定书
+  行政强制执行决定书:
+    title_contains_all:
+      - 行政强制执行
+      - 决定书
+  行政强制执行申请书:
+    title_contains_all:
+      - 行政强制执行
+      - 申请书
+  行政强制措施决定书:
+    title_contains_all:
+      - 行政强制措施
+      - 决定书
+    title_excludes_any:
+      - 处理决定书
+  行政强制措施处理决定书:
+    title_contains_all:
+      - 行政强制措施
+      - 处理决定书
+  行政强制措施审批表:
+    title_contains_all:
+      - 行政强制措施
+      - 审批
+  行政强制措施现场笔录:
+    title_contains_all:
+      - 行政强制措施
+      - 现场笔录
+  检验、检疫、检测、鉴定结果告知书:
+    title_contains_any:
+      - 检验结果告知书
+      - 检疫结果告知书
+      - 检测结果告知书
+      - 鉴定结果告知书
+  登记表:
+    title_contains_any:
+      - 行政检查登记表
+      - 检查登记表
+  涉企行政检查审批表:
+    title_contains_all:
+      - 行政检查
+      - 审批
+  涉企行政检查通知书:
+    title_contains_all:
+      - 行政检查
+      - 通知
+  督促履行义务催告书:
+    title_contains_all:
+      - 履行义务
+      - 催告
+  行政处罚案件办案期限延期审批表:
+    title_contains_all:
+      - 办案期限
+      - 审批
 
 excluded_section_title_keywords:
   证件信息:

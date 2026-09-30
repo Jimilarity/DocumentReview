@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, List
 
 
 CONSISTENCY_TASK = "一致性核查"
-FIELD_CATEGORIES = frozenset({"审查对象", "判断支撑", "结果核对"})
+FIELD_CATEGORIES = frozenset({"审查对象", "辅助支撑"})
 DEFAULT_FIELD_CATEGORY = "审查对象"
 
 

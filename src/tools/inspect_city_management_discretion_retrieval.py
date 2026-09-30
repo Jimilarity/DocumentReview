@@ -15,7 +15,7 @@ if hasattr(sys.stdout, "reconfigure"):
 SRC_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = SRC_ROOT.parent
 sys.path.insert(0, str(SRC_ROOT))
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 from knowledge_retrieval.common import ImposedPenalty, LegalCitation
 from human_support.models import HumanSupportContext

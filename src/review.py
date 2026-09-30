@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Type
 
@@ -26,10 +27,13 @@ from reviewers.case_level import CaseLevelReviewExecutor
 from reviewers.context_free import ContextFreeReviewExecutor
 from reviewers.context_sensitive import ContextSensitiveReviewExecutor
 from reviewers.document_preparation import DocumentReviewPreparationService
+from reviewers.document_mapping import deterministic_document_section_map
 from reviewers.result_aggregation import merge_rule_results
 from reviewers.result_coordinator import ReviewResultCoordinator
 from rules.rule_set import RuleSet, RuleSetBuilder
 from rules.filtering import (
+    filter_context_free_rules,
+    filter_context_sensitive_rules,
     filter_human_support_rules,
     human_support_document_names,
     retrieval_enhancement_module_names,
@@ -56,6 +60,7 @@ DOCUMENT_EXECUTOR_TYPES = (
 SUPPORT_EXECUTOR_REGISTRY = {
     SupportExecutorType.HUMAN_SUPPORT: HumanSupportExecutor,
 }
+LOGGER = logging.getLogger(__name__)
 
 
 def select_executor_class(
@@ -121,7 +126,7 @@ def _resolve_document_presence(
     if not document_names:
         return {}
     cached_presence = cache.document_presence
-    cached_mapping = cache.document_section_map
+    cached_mapping = cache.payload.get("document_section_map", {})
     presence_complete = all(
         name in cached_presence for name in document_names
     )
@@ -133,10 +138,44 @@ def _resolve_document_presence(
     if presence_complete and mapping_covers_scope:
         return {name: cached_presence[name] for name in document_names}
 
-    document_presence = DocumentMappingAgents().classify_document_presence(
-        document_names,
-        dir_info,
-    )
+    try:
+        deterministic_mapping = deterministic_document_section_map(
+            document_names,
+            dir_info,
+        )
+    except Exception as exc:
+        LOGGER.warning(
+            "deterministic document presence mapping failed; falling back "
+            "to the classifier. error=%s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        deterministic_mapping = {}
+    unresolved_names = [
+        name for name in document_names if name not in deterministic_mapping
+    ]
+    document_presence = {name: True for name in deterministic_mapping}
+    if unresolved_names:
+        try:
+            document_presence.update(
+                DocumentMappingAgents().classify_document_presence(
+                    unresolved_names,
+                    dir_info,
+                )
+            )
+        except Exception as exc:
+            LOGGER.warning(
+                "document presence classification failed; unresolved "
+                "documents will be skipped. error=%s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            document_presence.update(
+                {name: False for name in unresolved_names}
+            )
+    document_presence = {
+        name: document_presence[name] for name in document_names
+    }
     fresh_cache = StructuredFieldCache(
         cache.path,
         schema_version=cache.schema_version,
@@ -151,6 +190,7 @@ def _build_document_rule_sets(
     file_path: str | Path,
     rule_type: int,
     executor_types: Iterable[ReviewExecutorType],
+    rules_path: str | Path = RULES_PATH,
 ) -> tuple[
     Dict[ReviewExecutorType, RuleSet],
     Dict[str, bool],
@@ -165,7 +205,7 @@ def _build_document_rule_sets(
     meta_info = read_json(cache_paths.metadata)
     dir_info = normalize_directory_info(read_json(cache_paths.directory))
     ocr_results = read_json(cache_paths.ocr_results)
-    candidate_rules_data = read_json(RULES_PATH)
+    candidate_rules_data = read_json(rules_path)
     candidate_rules = (
         RuleSetBuilder(candidate_rules_data)
         .for_rule_type(rule_type)
@@ -210,8 +250,11 @@ def _build_document_rule_sets(
     return rule_sets, document_presence
 
 
-def _candidate_human_support_rules(rule_type: int) -> List[Dict[str, Any]]:
-    candidate_rules_data = read_json(RULES_PATH)
+def _candidate_human_support_rules(
+    rule_type: int,
+    rules_path: str | Path = RULES_PATH,
+) -> List[Dict[str, Any]]:
+    candidate_rules_data = read_json(rules_path)
     candidate_rules = (
         RuleSetBuilder(candidate_rules_data)
         .for_rule_type(rule_type)
@@ -270,6 +313,7 @@ def build_rule_set(
     rule_type: int,
     *,
     executor: ReviewExecutorType = ReviewExecutorType.CONTEXT_FREE,
+    rules_path: str | Path = RULES_PATH,
 ) -> RuleSet:
     """按照原 Builder 范式构建一个执行器专属的 RuleSet。"""
 
@@ -277,6 +321,7 @@ def build_rule_set(
         file_path,
         rule_type,
         [executor],
+        rules_path,
     )
     return rule_sets[executor]
 
@@ -291,11 +336,44 @@ def _present_document_names(
     ]
 
 
+def _mapped_document_presence(
+    document_section_map: Dict[str, List[int]],
+) -> Dict[str, bool]:
+    return {
+        name: bool(section_ids)
+        for name, section_ids in document_section_map.items()
+    }
+
+
+def _filter_rule_set_by_mapping(
+    executor_type: ReviewExecutorType,
+    rule_set: RuleSet,
+    document_section_map: Dict[str, List[int]],
+) -> RuleSet:
+    configured_key = {
+        ReviewExecutorType.CONTEXT_FREE: "上下文无关审查事项",
+        ReviewExecutorType.CONTEXT_SENSITIVE: "上下文相关审查事项",
+    }[executor_type]
+    if any(configured_key not in rule for rule in rule_set.rules):
+        return rule_set
+    rule_filter = {
+        ReviewExecutorType.CONTEXT_FREE: filter_context_free_rules,
+        ReviewExecutorType.CONTEXT_SENSITIVE: filter_context_sensitive_rules,
+    }[executor_type]
+    return RuleSet(
+        rules=rule_filter(
+            rule_set.rules,
+            _mapped_document_presence(document_section_map),
+        )
+    )
+
+
 async def prepare_context_sensitive_review(
     file_path: str,
     rule_type: int,
     *,
     settings: ReviewSettings | None = None,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, Any]:
     """单独准备上下文相关审查规则所需的结构化缓存。"""
 
@@ -303,6 +381,7 @@ async def prepare_context_sensitive_review(
         file_path,
         rule_type,
         [ReviewExecutorType.CONTEXT_SENSITIVE],
+        rules_path,
     )
     rule_set = rule_sets[ReviewExecutorType.CONTEXT_SENSITIVE]
     probe = ContextSensitiveReviewExecutor(
@@ -323,6 +402,18 @@ async def prepare_context_sensitive_review(
         _present_document_names(document_presence),
         settings=settings,
     ).prepare()
+    rule_set = _filter_rule_set_by_mapping(
+        ReviewExecutorType.CONTEXT_SENSITIVE,
+        rule_set,
+        document_section_map,
+    )
+    if not rule_set.rules:
+        return {
+            "preparation_completed": False,
+            "rule_count": 0,
+            "skipped": True,
+            "reason": "no_mapped_context_sensitive_rules",
+        }
     executor = ContextSensitiveReviewExecutor(
         file_path=file_path,
         rule_set=rule_set,
@@ -374,6 +465,7 @@ async def _run_custom_executor(
     executor_class: ExecutorClass | None,
     rule_set: RuleSet | None,
     settings: ReviewSettings | None,
+    rules_path: str | Path,
 ) -> Dict[str, Any]:
     selected_class = executor_class or select_executor_class(rule_type)
     executor_type = _executor_type_for_class(selected_class)
@@ -389,6 +481,7 @@ async def _run_custom_executor(
                 file_path,
                 rule_type,
                 [executor_type],
+                rules_path,
             )
             selected_rule_set = rule_sets[executor_type]
         else:
@@ -408,19 +501,27 @@ async def _run_custom_executor(
             "settings": settings,
         }
         if issubclass(selected_class, DocumentReviewExecutor):
-            kwargs["document_section_map"] = (
-                await DocumentReviewPreparationService(
-                    file_path,
-                    _present_document_names(document_presence),
-                    settings=settings,
-                ).prepare()
+            document_section_map = await DocumentReviewPreparationService(
+                file_path,
+                _present_document_names(document_presence),
+                settings=settings,
+            ).prepare()
+            selected_rule_set = _filter_rule_set_by_mapping(
+                executor_type,
+                selected_rule_set,
+                document_section_map,
             )
+            if not selected_rule_set.rules:
+                return _empty_review_result("no_mapped_applicable_rules")
+            kwargs["rule_set"] = selected_rule_set
+            kwargs["document_section_map"] = document_section_map
         executor = selected_class(**kwargs)
         raw_results = await executor.execute_raw()
 
     coordinator = ReviewResultCoordinator(
         file_path,
         settings=executor.settings,
+        rules_path=rules_path,
     )
     return await coordinator.finalize(
         raw_results,
@@ -458,6 +559,7 @@ async def run_review(
     executor_class: ExecutorClass | None = None,
     rule_set: RuleSet | None = None,
     settings: ReviewSettings | None = None,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, Any]:
     """按配置运行叶子审查器，共享案件事实与一次性文书映射。"""
 
@@ -468,6 +570,7 @@ async def run_review(
             executor_class,
             rule_set,
             settings,
+            rules_path,
         )
 
     enabled_types = load_enabled_executor_types()
@@ -482,6 +585,7 @@ async def run_review(
             file_path,
             rule_type,
             document_types,
+            rules_path,
         )
     else:
         rule_sets, document_presence = {}, {}
@@ -493,7 +597,7 @@ async def run_review(
     if human_support_enabled:
         try:
             candidate_human_support_rules = (
-                _candidate_human_support_rules(rule_type)
+                _candidate_human_support_rules(rule_type, rules_path)
             )
             support_document_names = human_support_document_names(
                 candidate_human_support_rules
@@ -551,8 +655,18 @@ async def run_review(
             file_path,
             settings=settings,
         )
-        case_level_results = await case_level_executor.execute_raw()
-        case_level_status = case_level_executor.status()
+        try:
+            case_level_results = await case_level_executor.execute_raw()
+            case_level_status = case_level_executor.status()
+        except Exception as exc:
+            case_level_results = []
+            case_level_status = {
+                "executor": type(case_level_executor).__name__,
+                "implemented": True,
+                "skipped": False,
+                "reason": "case_level_execution_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
     else:
         case_level_results = []
         case_level_status = _disabled_executor_status(
@@ -638,7 +752,51 @@ async def run_review(
         else {}
     )
 
+    mapped_presence = _mapped_document_presence(document_section_map)
+    for executor_type in document_types:
+        rule_sets[executor_type] = _filter_rule_set_by_mapping(
+            executor_type,
+            rule_sets[executor_type],
+            document_section_map,
+        )
+    if human_support_enabled:
+        human_support_rule_set = RuleSet(
+            rules=filter_human_support_rules(
+                human_support_rule_set.rules,
+                mapped_presence,
+            )
+        )
+
+    executable_indexes = {}
+    executable_rule_ids = set()
+    for executor_type in document_types:
+        executor_class_for_type = EXECUTOR_REGISTRY[executor_type]
+        probe = executor_class_for_type(
+            file_path=file_path,
+            rule_set=rule_sets[executor_type],
+            document_section_map=document_section_map,
+            settings=settings,
+        )
+        indexes = probe.executable_rule_indexes()
+        executable_indexes[executor_type] = indexes
+        executable_rule_ids.update(
+            rule_sets[executor_type].rules[index]["序号"]
+            for index in indexes
+        )
+    human_support_probe = human_support_executor_class(
+        file_path=file_path,
+        rule_set=human_support_rule_set,
+        document_section_map=document_section_map,
+        settings=settings,
+    )
+    human_support_indexes = (
+        human_support_probe.executable_rule_indexes()
+        if human_support_enabled
+        else []
+    )
+
     result_groups: List[List[Dict[str, Any]]] = []
+    executor_errors: List[Dict[str, str]] = []
     context_sensitive_preparation = {
         "preparation_completed": False,
         "rule_count": 0,
@@ -670,7 +828,15 @@ async def run_review(
             document_section_map=document_section_map,
             settings=settings,
         )
-        await delivery_preparer.run_preparation()
+        try:
+            await delivery_preparer.run_preparation()
+        except Exception as exc:
+            executor_errors.append(
+                {
+                    "executor": "delivery_preparation",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
     for executor_type in document_types:
         if not executable_indexes[executor_type]:
             continue
@@ -680,9 +846,17 @@ async def run_review(
             document_section_map=document_section_map,
             settings=settings,
         )
-        result_groups.append(await executor.execute_raw())
-        if executor_type is ReviewExecutorType.CONTEXT_SENSITIVE:
-            context_sensitive_preparation = executor.last_preparation_result
+        try:
+            result_groups.append(await executor.execute_raw())
+            if executor_type is ReviewExecutorType.CONTEXT_SENSITIVE:
+                context_sensitive_preparation = executor.last_preparation_result
+        except Exception as exc:
+            executor_errors.append(
+                {
+                    "executor": executor_type.value,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
 
     if human_support_indexes:
         try:
@@ -730,7 +904,11 @@ async def run_review(
     result_groups.append(case_level_results)
     raw_results = merge_rule_results(*result_groups)
     if executable_rule_ids or case_level_results:
-        coordinator = ReviewResultCoordinator(file_path, settings=settings)
+        coordinator = ReviewResultCoordinator(
+            file_path,
+            settings=settings,
+            rules_path=rules_path,
+        )
         result = await coordinator.finalize(
             raw_results,
             rule_count=len(executable_rule_ids),
@@ -758,4 +936,5 @@ async def run_review(
     )
     result["case_level_review"] = case_level_status
     result["retrieval_enhancement"] = human_support_status
+    result["executor_errors"] = executor_errors
     return result

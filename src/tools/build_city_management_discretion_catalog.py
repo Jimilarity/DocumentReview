@@ -23,7 +23,7 @@ from knowledge_retrieval.city_management_discretion.models import (
     GeneratedItemCitations,
 )
 from model_config import build_text_model
-from utils import extract_json
+from utils import extract_json, strip_thinking_content
 
 
 DEFAULT_SOURCE = (
@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--item-id", action="append", default=[])
     parser.add_argument("--max-items", type=int)
-    parser.add_argument("--concurrency", type=int, default=3)
+    parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--max-tries", type=int, default=3)
     parser.add_argument("--no-resume", action="store_true")
     return parser.parse_args()
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
 def _message_text(message: Any) -> str:
     content = getattr(message, "content", None)
     if isinstance(content, str):
-        return content
+        return strip_thinking_content(content)
     if isinstance(content, list):
         texts = [
             item["text"]
@@ -72,7 +72,7 @@ def _message_text(message: Any) -> str:
             and isinstance(item.get("text"), str)
         ]
         if texts:
-            return "\n".join(texts)
+            return strip_thinking_content("\n".join(texts))
     raise RuntimeError(f"预处理模型返回了无法解析的内容: {content!r}")
 
 
@@ -284,7 +284,7 @@ async def build_catalog(args: argparse.Namespace) -> None:
         parents=True,
         exist_ok=True,
     )
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
     model = build_text_model(
         parallel_tool_calls=False,
         enable_thinking=False,

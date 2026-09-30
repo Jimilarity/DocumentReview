@@ -8,7 +8,7 @@ SRC_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = SRC_ROOT.parent
 sys.path.insert(0, str(SRC_ROOT))
 
-from constants import DocumentType
+from constants import DocumentType, RULES_PATH
 from rules.filtering import (
     _select_rules,
     context_free_document_names,
@@ -32,9 +32,7 @@ class RuleFilteringTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.all_rules = json.loads(
-            (PROJECT_ROOT / "data" / "all_rules.json").read_text(
-                encoding="utf-8"
-            )
+            RULES_PATH.read_text(encoding="utf-8")
         )
 
     def all_rule_items(self):
@@ -134,11 +132,74 @@ class RuleFilteringTest(unittest.TestCase):
         self.assertEqual(
             configured_tasks,
             {
-                "一致性核查",
+                "上下文合法性审查",
                 "事实清楚、证据充分",
                 "适用法律准确",
                 "程序合法",
             },
+        )
+
+    def test_subject_and_officer_legality_rules_use_legality_review(self) -> None:
+        rules = {
+            rule["序号"]: rule
+            for rule in self.all_rules["合法性标准"]["通用"]
+        }
+
+        for rule_number in (101, 102, 103):
+            self.assertEqual(
+                rules[rule_number]["上下文相关审查事项"][0]["任务"],
+                "上下文合法性审查",
+            )
+
+    def test_evidence_sufficiency_rules_do_not_require_all_evidence_equal(self) -> None:
+        rules = {
+            rule["序号"]: rule
+            for rule in self.all_rules["合法性标准"]["通用"]
+        }
+
+        for rule_number in (105, 106):
+            self.assertEqual(
+                rules[rule_number]["上下文相关审查事项"][0]["任务"],
+                "事实清楚、证据充分",
+            )
+
+    def test_rule_337_uses_party_type_specific_hearing_thresholds(self) -> None:
+        rules = {
+            rule["序号"]: rule
+            for rule in self.all_rules["规范性标准"]["行政处罚"]
+        }
+        rule = rules[337]
+        self.assertEqual(rule["上下文相关审查事项"], [])
+        context_free_item = rule["上下文无关审查事项"][
+            "行政处罚事先（听证）告知书"
+        ]
+        description = context_free_item["评查说明"]
+
+        self.assertIn("自然人的，罚款五千元以上", description)
+        self.assertIn("法人或者其他组织的，罚款十万元以上", description)
+        self.assertIn("以上”包含本数", description)
+        self.assertIn("不得仅因出现个人姓名就把法人案件按自然人处理", description)
+        self.assertIn("不直接判错，转人工复核", description)
+        self.assertIn(
+            "告知当事人陈述、申辩权利及联系方式",
+            context_free_item["审查事项"],
+        )
+
+        legality_rules = {
+            item["序号"]: item
+            for item in self.all_rules["合法性标准"]["行政处罚"]
+        }
+        rule_142_description = legality_rules[142][
+            "上下文相关审查事项"
+        ][0]["评查说明"]
+        self.assertIn("自然人的，罚款五千元以上", rule_142_description)
+        self.assertIn(
+            "法人或者其他组织的，罚款十万元以上",
+            rule_142_description,
+        )
+        self.assertIn(
+            "不得仅因文书出现法定代表人、负责人或经办人的个人姓名",
+            rule_142_description,
         )
 
     def test_rule_type_parser_accepts_binary_forms(self) -> None:
@@ -355,10 +416,6 @@ class RuleFilteringTest(unittest.TestCase):
             "调查询问笔录": "询问笔录",
             "重大行政处罚决定法制审核意见书": "法制审核意见",
             "行政相对人的身份证明或主体资格证明材料": "证件信息",
-            "抽样取证记录": "取证记录信息",
-            "当事人提交的复制件等证据材料": "取证记录信息",
-            "行政执法人员采集制作的证据材料": "取证记录信息",
-            "计算机数据、录音、录像、图片等证据材料": "取证记录信息",
         }
         self.assertEqual(
             {
@@ -426,7 +483,7 @@ class RuleFilteringTest(unittest.TestCase):
                             {
                                 "field": "行政处罚决定书文号",
                                 "required": False,
-                                "字段类别": "结果核对",
+                                "字段类别": "辅助支撑",
                             }
                         ],
                     }
@@ -442,7 +499,7 @@ class RuleFilteringTest(unittest.TestCase):
         self.assertEqual(len(field_items), 2)
         self.assertEqual(
             {item["字段类别"] for item in field_items},
-            {"审查对象", "结果核对"},
+            {"审查对象", "辅助支撑"},
         )
 
     def test_normalization_canonicalizes_legal_query_document_and_field(self):

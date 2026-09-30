@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 import shutil
 
@@ -14,7 +15,7 @@ async def run_review(task_id: str, input_pdf: str, file_type: int, result_dir: s
     try:
         pipeline_result = await asyncio.wait_for(
             run_review_pipeline(str(input_pdf), int(file_type)),
-            timeout=60 * 60,
+            timeout=int(os.getenv("REVIEW_PIPELINE_TIMEOUT_SECONDS", "7200")),
         )
         if not pipeline_result.get("success", False):
             return {

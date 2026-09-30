@@ -7,9 +7,17 @@ from agent_trace import AGENT_TRACE_CALLBACK
 
 
 _MODEL_RATE_LIMITER: InMemoryRateLimiter | None = None
-_MODEL_MAX_RETRIES = 8
-_MODEL_TIMEOUT_SECONDS = 120
-_VISION_MODEL_TIMEOUT_SECONDS = 360
+_MODEL_MAX_RETRIES = 0
+_MODEL_TIMEOUT_SECONDS = 1500
+_VISION_MODEL_TIMEOUT_SECONDS = 1500
+
+
+def _thinking_extra_body(enable_thinking: bool | None) -> dict:
+    enable_thinking = False if enable_thinking is None else enable_thinking
+    return {
+        "enable_thinking": enable_thinking,
+        "chat_template_kwargs": {"enable_thinking": enable_thinking},
+    }
 
 
 def _get_model_rate_limiter() -> InMemoryRateLimiter | None:
@@ -53,17 +61,16 @@ def _get_required_env(*names: str) -> str:
 
 def build_vision_model(
     *,
-    enable_thinking: bool | None = None,
+    enable_thinking: bool | None = False,
 ) -> ChatOpenAI:
-    extra_body = {}
-    if enable_thinking is not None:
-        extra_body["enable_thinking"] = enable_thinking
+    extra_body = _thinking_extra_body(enable_thinking)
 
     return ChatOpenAI(
         model=os.environ.get("REVIEW_VISION_MODEL"),
         api_key=_get_required_env("REVIEW_VISION_API_KEY"),
         base_url=os.environ.get("REVIEW_VISION_BASE_URL"),
         temperature=float(os.environ["REVIEW_VISION_TEMPERATURE"]),
+        max_tokens=int(os.getenv("REVIEW_VISION_MAX_TOKENS", "4096")),
         extra_body=extra_body,
         callbacks=[AGENT_TRACE_CALLBACK],
         tags=["model:vision"],
@@ -75,7 +82,10 @@ def build_vision_model(
                 )
             ),
             max_retries=int(
-                os.getenv("REVIEW_VISION_MAX_RETRIES", str(_MODEL_MAX_RETRIES))
+                os.getenv(
+                    "REVIEW_VISION_MAX_RETRIES",
+                    os.getenv("REVIEW_MODEL_MAX_RETRIES", str(_MODEL_MAX_RETRIES)),
+                )
             ),
         ),
     )
@@ -84,14 +94,14 @@ def build_vision_model(
 def build_text_model(
     *,
     parallel_tool_calls: bool | None = None,
-    enable_thinking: bool | None = None,
+    enable_thinking: bool | None = False,
+    timeout_seconds: int | None = None,
+    max_retries: int | None = None,
 ) -> ChatOpenAI:
     model_kwargs = {}
     if parallel_tool_calls is not None:
         model_kwargs["parallel_tool_calls"] = parallel_tool_calls
-    extra_body = {}
-    if enable_thinking is not None:
-        extra_body["enable_thinking"] = enable_thinking
+    extra_body = _thinking_extra_body(enable_thinking)
 
     return ChatOpenAI(
         model=os.environ.get("REVIEW_TEXT_MODEL"),
@@ -102,5 +112,29 @@ def build_text_model(
         extra_body=extra_body,
         callbacks=[AGENT_TRACE_CALLBACK],
         tags=["model:text"],
-        **_transport_options(),
+        **_transport_options(
+            timeout_seconds=(
+                timeout_seconds
+                if timeout_seconds is not None
+                else int(
+                    os.getenv(
+                        "REVIEW_TEXT_TIMEOUT",
+                        str(_MODEL_TIMEOUT_SECONDS),
+                    )
+                )
+            ),
+            max_retries=(
+                max_retries
+                if max_retries is not None
+                else int(
+                    os.getenv(
+                        "REVIEW_TEXT_MAX_RETRIES",
+                        os.getenv(
+                            "REVIEW_MODEL_MAX_RETRIES",
+                            str(_MODEL_MAX_RETRIES),
+                        ),
+                    )
+                )
+            ),
+        ),
     )

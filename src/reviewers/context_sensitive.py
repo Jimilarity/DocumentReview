@@ -8,7 +8,12 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import RunnableConfig
 
 from agents import ContextSensitiveReviewAgents
-from external_knowledge import KnowledgeContext, KnowledgeItem, KnowledgeService
+from external_knowledge import (
+    KNOWLEDGE_UNAVAILABLE_NOTE,
+    KnowledgeContext,
+    KnowledgeItem,
+    KnowledgeService,
+)
 from constants import STRUCTURED_FIELD_CACHE_SCHEMA_VERSION
 from review_config import (
     ContextSensitiveSettings,
@@ -33,7 +38,7 @@ from .consistency import (
     required_field_issues,
 )
 from rules.normalization import canonical_document_type, load_rule_aliases
-from .section_content import extract_section_ocr_text
+from .section_content import extract_section_ocr_text, section_page_range
 from rules.filtering import (
     context_sensitive_document_names,
     filter_context_sensitive_rules,
@@ -47,8 +52,19 @@ class ContextSensitiveReviewState(ReviewState, total=False):
     delivery_event_count: int
 
 
-CONTEXTUAL_LEGALITY_TASK = "上下文合法性审查"
+CONTEXTUAL_LEGALITY_TASK = "主体合法"
 NO_PENALTY_LEGALITY_TASK = "不予处罚合法性审查"
+
+# 字段说明 notes 中预存的转义串（\n、\" 等）被 YAML 普通标量按字面保留，
+# 再经 json.dumps 二次转义成 \\n、\\\"，形成噪声。这里只还原常见转义。
+_NOTES_ESCAPE_PAIRS = (
+    ("\\n", "\n"),
+    ("\\t", "\t"),
+    ("\\r", "\r"),
+    ('\\"', '"'),
+    ("\\'", "'"),
+    ("\\\\", "\\"),
+)
 
 
 def _valid_field_value(field_type: str, value: Any) -> bool:
@@ -118,6 +134,18 @@ def validate_extracted_fields(
             )
 
 
+def normalize_delivery_extracted_fields(
+    extracted_fields: Dict[str, Any],
+    requested_specs: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Keep configured delivery keys, fill missing values, discard unknown keys."""
+
+    return {
+        field_name: extracted_fields.get(field_name)
+        for field_name in requested_specs
+    }
+
+
 class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
     """准备结构化缓存并执行“上下文相关审查事项”。"""
 
@@ -185,6 +213,12 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         return cache
 
     @staticmethod
+    def _unescape_notes(notes: str) -> str:
+        for escaped, real in _NOTES_ESCAPE_PAIRS:
+            notes = notes.replace(escaped, real)
+        return notes
+
+    @staticmethod
     def _minimal_prompt_specs(
         specs: Dict[str, Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
@@ -193,7 +227,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             item = {"field": field_name, "type": spec["type"]}
             notes = spec.get("notes")
             if isinstance(notes, str) and notes.strip():
-                item["notes"] = notes
+                item["notes"] = ContextSensitiveReviewExecutor._unescape_notes(
+                    notes
+                )
             prompt_specs.append(item)
         return prompt_specs
 
@@ -215,20 +251,17 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         field_names: Iterable[str],
     ) -> Dict[str, Dict[str, Any]]:
         field_specs = self.context_settings["field_specs"]
-        if document_type not in field_specs:
-            raise ValueError(
-                f"文书类型“{document_type}”未在 section_fields.yaml 中配置"
-            )
-        document_specs = field_specs[document_type]
+        document_specs = field_specs.setdefault(document_type, {})
         missing_fields = [
             field_name
             for field_name in field_names
             if field_name not in document_specs
         ]
-        if missing_fields:
-            raise ValueError(
-                f"文书类型“{document_type}”缺少字段配置: {missing_fields}"
-            )
+        for field_name in missing_fields:
+            document_specs[field_name] = {
+                "type": "str",
+                "notes": "数据库字段未单独配置类型，按文本字段提取",
+            }
         return {
             field_name: document_specs[field_name]
             for field_name in field_names
@@ -243,20 +276,66 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         context = self.require_document_context()
         specs = self._specs_for_section(section_id, field_names)
         document_type = cache.document_type(section_id)
-        prompt = self.require_context_sensitive_agents().build_task_prompt(
-            "section_field_extraction",
-            document_type=document_type,
-            field_specs=json.dumps(
-                self._minimal_prompt_specs(specs),
-                ensure_ascii=False,
-                indent=2,
-            ),
-            ocr_text=extract_section_ocr_text(
-                section_id,
-                context.dir_info,
-                context.ocr_results,
-            ),
+        ocr_text = extract_section_ocr_text(
+            section_id,
+            context.dir_info,
+            context.ocr_results,
         )
+
+        def build_prompt(target_specs: Dict[str, Dict[str, Any]]) -> str:
+            return self.require_context_sensitive_agents().build_task_prompt(
+                "section_field_extraction",
+                document_type=document_type,
+                field_specs=json.dumps(
+                    self._minimal_prompt_specs(target_specs),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                ocr_text=ocr_text,
+            )
+
+        fields = await self._run_field_extraction(build_prompt(specs), specs)
+
+        # 第一次提取后，对仍为 null（未提取到）的字段做一次严格重试。
+        null_fields = [
+            field_name
+            for field_name in field_names
+            if fields.get(field_name) is None
+        ]
+        if null_fields:
+            retry_specs = {
+                field_name: specs[field_name]
+                for field_name in null_fields
+            }
+            retry_prompt = build_prompt(retry_specs)
+            retry_prompt += self._retry_extraction_hint(null_fields)
+            retry_fields = await self._run_field_extraction(
+                retry_prompt,
+                retry_specs,
+            )
+            fields.update(retry_fields)
+
+        return fields
+
+    @staticmethod
+    def _retry_extraction_hint(null_fields: List[str]) -> str:
+        names = "、".join(null_fields)
+        return (
+            "\n\n<retry_extraction>\n"
+            f"上一轮提取时，以下字段返回了 null（未找到明确对应值）：{names}。\n"
+            "现在只重新提取这些字段。请逐字重新阅读当前文书 OCR："
+            "只有找到与字段含义严格对应、且能在原文中明确指认的值时才填写；"
+            "仍未载明、被遮挡、未填写、无法可靠辨认，或只能找到近义/其他字段的值时，"
+            "必须继续返回 null。严禁用当事人住所或注册地址、近似时间、"
+            "其他字段的值或任何推测来填充。\n"
+            "</retry_extraction>"
+        )
+
+    async def _run_field_extraction(
+        self,
+        prompt: str,
+        specs: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         agents = self.require_context_sensitive_agents()
         max_attempts = agents._structured_output_max_attempts()
         validation_error: Exception | None = None
@@ -314,8 +393,9 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             prompt,
             self.settings.agent_recursion_limit,
         )
-        validate_extracted_fields(result.fields, specs)
-        return result.fields
+        fields = normalize_delivery_extracted_fields(result.fields, specs)
+        validate_extracted_fields(fields, specs)
+        return fields
 
     def _prewarm_fields_by_document(self) -> Dict[str, List[str]]:
         plan = {
@@ -384,6 +464,22 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             for item in dir_info
         ]
 
+    def _exact_pdf_location(self, section_id: int) -> Dict[str, int]:
+        """仅在 section 恰好对应一页时提供可靠的 PDF 页码。"""
+
+        context = self.require_document_context()
+        try:
+            start_page, end_page = section_page_range(
+                section_id,
+                context.dir_info,
+                len(context.ocr_results),
+            )
+        except (KeyError, StopIteration, TypeError, ValueError):
+            return {}
+        if end_page - start_page != 1:
+            return {}
+        return {"pdf_page_number": start_page + 1}
+
     async def _extract_delivery_receipt(
         self,
         section_id: int,
@@ -422,12 +518,13 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
         events = []
         for event in sorted(result.events, key=lambda item: item.source_order):
-            validate_extracted_fields(event.fields, specs)
+            fields = normalize_delivery_extracted_fields(event.fields, specs)
+            validate_extracted_fields(fields, specs)
             events.append(
                 {
                     "source_order": event.source_order,
                     "event_text": event.event_text,
-                    **event.fields,
+                    **fields,
                 }
             )
         return events
@@ -715,8 +812,12 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                         prompt,
                         self.settings.agent_recursion_limit,
                     )
-                    validate_extracted_fields(result.fields, specs)
-                    event.update(result.fields)
+                    fields = normalize_delivery_extracted_fields(
+                        result.fields,
+                        specs,
+                    )
+                    validate_extracted_fields(fields, specs)
+                    event.update(fields)
                 else:
                     event.update(
                         await self._extract_delivery_event_fields(
@@ -1004,7 +1105,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 for section_id in (
                     list(section_ids)
                     if section_ids is not None
-                    else self.document_section_map[document_type]
+                    else self.document_section_map.get(document_type, [])
                 )
             )
         )
@@ -1019,7 +1120,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         cache = self.require_structured_field_cache()
         field_names = [item["field"] for item in field_items]
         sources: List[ConsistencySource] = []
-        for receipt_section_id in self.document_section_map[document_type]:
+        for receipt_section_id in self.document_section_map.get(document_type, []):
             events = cache.delivery_events(receipt_section_id)
             if related_section_ids is not None:
                 events = [
@@ -1156,7 +1257,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         anchor_section_ids = [
             section_id
             for document_type in anchor_document_types
-            for section_id in self.document_section_map[document_type]
+            for section_id in self.document_section_map.get(document_type, [])
         ]
         for anchor_section_id in anchor_section_ids:
             delivery_sources = await self._delivery_consistency_sources(
@@ -1218,6 +1319,7 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             {
                 "document_type": source.document_type,
                 "section_id": source.section_id,
+                **self._exact_pdf_location(source.section_id),
                 **(
                     {"related_section_id": source.related_section_id}
                     if source.related_section_id is not None
@@ -1225,7 +1327,6 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                 ),
                 "field": source.field_name,
                 "field_category": source.field_category,
-                "required": source.required,
                 "value": source.value,
             }
             for source in sources
@@ -1337,6 +1438,13 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
 
         return {"issues": issues}
 
+    @staticmethod
+    def _trimmed_review_item(context_item: Dict[str, Any]) -> Dict[str, Any]:
+        """只把审查目标所需的规则内容交给模型，去掉整块字段配置。"""
+
+        keys = ("任务", "评查类别", "审查事项", "评查说明")
+        return {key: context_item.get(key, "") for key in keys}
+
     async def run_contextual_legality_item(
         self,
         rule: Dict[str, Any],
@@ -1359,12 +1467,26 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             else "categorized_contextual_review"
         )
         agents = self.require_context_sensitive_agents()
+        review_item_payload = self._trimmed_review_item(context_item)
+        if knowledge_items:
+            external_knowledge_payload = json.dumps(
+                [item.content for item in knowledge_items],
+                ensure_ascii=False,
+            )
+        elif self._knowledge_function_names(context_item):
+            external_knowledge_payload = json.dumps(
+                KNOWLEDGE_UNAVAILABLE_NOTE,
+                ensure_ascii=False,
+            )
+        else:
+            external_knowledge_payload = json.dumps([], ensure_ascii=False)
         issues = []
         for group in source_groups:
             compact_sources = [
                 {
                     "document_type": source.document_type,
                     "section_id": source.section_id,
+                    **self._exact_pdf_location(source.section_id),
                     **(
                         {"related_section_id": source.related_section_id}
                         if source.related_section_id is not None
@@ -1372,19 +1494,19 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     ),
                     "field": source.field_name,
                     "field_category": source.field_category,
-                    "required": source.required,
                     "value": source.value,
                 }
                 for source in group
+                if source.value is not None
             ]
             prompt = self.require_context_sensitive_agents().build_task_prompt(
                 prompt_name,
-                review_item=json.dumps(context_item, ensure_ascii=False),
-                sources=json.dumps(compact_sources, ensure_ascii=False),
-                external_knowledge=json.dumps(
-                    [item.content for item in knowledge_items],
+                review_item=json.dumps(
+                    review_item_payload,
                     ensure_ascii=False,
                 ),
+                sources=json.dumps(compact_sources, ensure_ascii=False),
+                external_knowledge=external_knowledge_payload,
             )
             result = await agents.ainvoke_contextual_legality_review(
                 prompt,

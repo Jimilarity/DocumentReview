@@ -61,9 +61,10 @@ def _document_records(value: Any) -> Iterator[Dict[str, Any]]:
 
 def _review_requirements(
     rule_type: int,
+    rules_path: str | Path = RULES_PATH,
 ) -> tuple[List[str], Dict[str, List[str]]]:
     rules = (
-        RuleSetBuilder(read_json(RULES_PATH))
+        RuleSetBuilder(read_json(rules_path))
         .for_rule_type(rule_type)
         .build()
         .rules
@@ -260,6 +261,7 @@ def prepare_structured_json(
     rule_type: int,
     *,
     cache_root: str | Path | None = None,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, Any]:
     source_path = Path(file_path)
     source_bytes = source_path.read_bytes()
@@ -347,7 +349,10 @@ def prepare_structured_json(
             ocr_results,
         ),
     )
-    required_names, required_fields = _review_requirements(rule_type)
+    required_names, required_fields = _review_requirements(
+        rule_type,
+        rules_path,
+    )
     presence = {
         name: bool(document_section_map.get(name))
         for name in required_names

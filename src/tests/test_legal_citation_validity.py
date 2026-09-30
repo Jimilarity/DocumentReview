@@ -63,15 +63,24 @@ class LegalCitationValidityTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_query_is_limited_and_uses_no_optional_fields(self):
         context = build_context()
-        context = KnowledgeContext(**{**context.__dict__, "metadata": {**context.metadata, "案情": "甲" * 400}})
-        with patch.object(knowledge, "_request", return_value={"candidates": []}) as request:
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "metadata": {**context.metadata, "案情": "甲" * 400},
+            }
+        )
+        with patch.object(
+            knowledge,
+            "_request",
+            return_value={"candidates": []},
+        ) as request:
             await knowledge.retrieve_legal_citation_validity(context)
 
         payload = request.call_args.args[0]
-        self.assertLessEqual(len(payload["text"]), 300)
+        self.assertLessEqual(len(payload["text"]), 200)
         self.assertTrue(payload["with_text"])
         self.assertTrue(payload["with_focus"])
-        self.assertNotIn("as_of", payload)
+        self.assertEqual(payload["as_of"], "2025-06-01")
 
     async def test_identical_request_is_cached(self):
         with patch.object(knowledge, "_request", return_value={"candidates": []}) as request:
@@ -161,6 +170,82 @@ class LegalCitationValidityTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("行政处罚决定书的违法事实：决定书事实", query)
         self.assertIn("责令改正通知书的违法事实：整改书事实", query)
+
+    def test_query_prioritizes_configured_fields_within_200_characters(self):
+        context = build_context(
+            法条检索查询={"字段": ["处罚依据", "裁量依据", "违法事实"]},
+        )
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "metadata": {
+                    **context.metadata,
+                    "案情": "冗长案情" * 100,
+                    "处罚依据": "《深圳经济特区市容和环境卫生管理条例》第十九条第三款",
+                    "裁量依据": "按照污染面积处每平方米一千元罚款",
+                    "违法事实": "向城市道路排放清疏排水管道产生的污物",
+                },
+            }
+        )
+
+        query, _ = knowledge._query_text(
+            context,
+            context.review_item["法条检索查询"],
+        )
+
+        self.assertLessEqual(len(query), 200)
+        self.assertTrue(query.startswith("处罚依据："))
+        self.assertIn("裁量依据：按照污染面积处每平方米一千元罚款", query)
+        self.assertIn("案由：擅自占道设摊经营", query)
+
+    def test_query_prioritizes_legal_basis_before_long_facts(self):
+        context = build_context(
+            法条检索查询={"字段": ["违法事实", "处罚依据", "裁量依据"]},
+        )
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "metadata": {
+                    **context.metadata,
+                    "违法事实": "事实" * 200,
+                    "处罚依据": "《示例条例》第十九条第三款",
+                    "裁量依据": "按污染面积每平方米一千元",
+                },
+            }
+        )
+
+        query, _ = knowledge._query_text(
+            context,
+            context.review_item["法条检索查询"],
+        )
+
+        self.assertLessEqual(len(query), 200)
+        self.assertTrue(query.startswith("处罚依据："))
+        self.assertIn("裁量依据：按污染面积每平方米一千元", query)
+
+    def test_long_legal_basis_does_not_displace_discretion_basis(self):
+        context = build_context(
+            法条检索查询={"字段": ["处罚依据", "裁量依据"]},
+        )
+        context = KnowledgeContext(
+            **{
+                **context.__dict__,
+                "metadata": {
+                    **context.metadata,
+                    "处罚依据": "《超长法规名称》" + "处罚条文" * 100,
+                    "裁量依据": "按污染面积每平方米一千元",
+                },
+            }
+        )
+
+        query, _ = knowledge._query_text(
+            context,
+            context.review_item["法条检索查询"],
+        )
+
+        self.assertLessEqual(len(query), 200)
+        self.assertIn("处罚依据：《超长法规名称》", query)
+        self.assertIn("裁量依据：按污染面积每平方米一千元", query)
 
     def test_query_falls_back_to_metadata_when_structured_field_missing(self):
         context = build_context(

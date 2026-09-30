@@ -19,7 +19,7 @@ from pydantic import (
 )
 
 from model_config import build_text_model
-from utils import extract_json
+from utils import extract_json, strip_thinking_content
 
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class ExactLegalCitationLookup(Generic[RecordT]):
 def _message_text(message: Any) -> str:
     content = getattr(message, "content", None)
     if isinstance(content, str):
-        return content
+        return strip_thinking_content(content)
     if isinstance(content, list):
         parts = [
             item["text"]
@@ -197,7 +197,7 @@ def _message_text(message: Any) -> str:
             and isinstance(item.get("text"), str)
         ]
         if parts:
-            return "\n".join(parts)
+            return strip_thinking_content("\n".join(parts))
     return ""
 
 
