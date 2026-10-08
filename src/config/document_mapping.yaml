@@ -4,90 +4,65 @@ compatible_document_type_groups:
     - 行政执法人员采集制作的证据材料
     - 证件信息
     - 身份证
+    - 营业执照
+    - 法定代表人身份证明书
     - 取证记录
+    - 图片文书
     - 热敏纸质传真件等难以长期保存的书证
     - 代替书证原件的复印件、照片、节录本
     - 有关部门保管的书证复制件、影印件、抄录件
     - 计算机数据、录音、录像、图片等证据材料
     - 域外及港澳台形成的证据
+  enforcement_officer_certificates:
+    - 执法证1
+    - 执法证2
+  investigation_report_documents:
+    - 案件调查报告
+    - 案件调查审批表
+  waiver_documents:
+    - 放弃陈述、申辩声明
+    - 放弃陈述、申辩权利的声明和尽快作出行政处罚决定申请书
+  execution_evidence_documents:
+    - 行政处罚执行情况
+    - 广东省行政执法信息公示平台公示凭证或截图
+  authorization_evidence_attributes:
+    - 授权委托书
+    - 当事人提交的复制件等证据材料
+    - 代替书证原件的复印件、照片、节录本
+  inspection_evidence_attributes:
+    - 现场检查（勘验）笔录
+    - 行政执法人员采集制作的证据材料
+    - 取证记录
+  penalty_decision_legal_summary_view:
+    - 行政处罚决定书
+    - 法律适用告知（行政处罚决定书）
+  on_site_penalty_legal_summary_view:
+    - 行政处罚决定书
+    - 法律适用告知（当场行政处罚决定书）
+  rectification_legal_summary_view:
+    - 责令改正通知书
+    - 法律适用告知（责令改正通知书）
+  hearing_notice_legal_summary_view:
+    - 行政处罚事先（听证）告知书
+    - 法律适用告知（行政处罚（听证）告知书）
+
+aggregate_document_types:
+  - 当事人提交的复制件等证据材料
+  - 行政执法人员采集制作的证据材料
+  - 证件信息
+  - 取证记录
+  - 图片文书
+  - 热敏纸质传真件等难以长期保存的书证
+  - 代替书证原件的复印件、照片、节录本
+  - 有关部门保管的书证复制件、影印件、抄录件
+  - 计算机数据、录音、录像、图片等证据材料
+  - 域外及港澳台形成的证据
 
 deterministic_document_matchers:
   抽样取证记录:
     title_contains_all:
       - 抽样取证
       - 记录
-  当事人提交的复制件等证据材料:
-    section_kinds:
-      - evidence_material
-    subject_roles:
-      - 当事人
-      - 行政相对人
-      - 法定代表人
-      - 委托代理人
-    title_excludes_any:
-      - 执法证
-      - 法律职业资格
-      - 工作证明
-  行政执法人员采集制作的证据材料:
-    section_kinds:
-      - evidence_material
-    title_contains_any:
-      - 现场照片
-      - 照片证据
-      - 视听资料
-      - 电子数据
-      - 录音
-      - 录像
-      - 制作过程说明
-    title_excludes_any:
-      - 身份证
-      - 主体资格
-      - 营业执照
-      - 执法证
-      - 法律职业资格
-  计算机数据、录音、录像、图片等证据材料:
-    section_kinds:
-      - evidence_material
-    title_contains_any:
-      - 现场照片
-      - 照片证据
-      - 视听资料
-      - 电子数据
-      - 录音
-      - 录像
-      - 图片
-  代替书证原件的复印件、照片、节录本:
-    section_kinds:
-      - evidence_material
-    title_excludes_any:
-      - 视听资料
-      - 电子数据
-      - 录音
-      - 录像
-      - 执法证
-      - 法律职业资格
-      - 工作证明
-  有关部门保管的书证复制件、影印件、抄录件:
-    section_kinds:
-      - evidence_material
-    title_contains_any:
-      - 部门保管
-      - 影印件
-      - 抄录件
-  热敏纸质传真件等难以长期保存的书证:
-    section_kinds:
-      - evidence_material
-    title_contains_any:
-      - 热敏
-      - 传真件
-  域外及港澳台形成的证据:
-    section_kinds:
-      - evidence_material
-    title_contains_any:
-      - 域外
-      - 香港
-      - 澳门
-      - 台湾
   现场检查（勘验）笔录:
     title_contains_any:
       - 现场检查记录
@@ -130,6 +105,8 @@ deterministic_document_matchers:
       - 行政处罚事先（听证）告知书
       - 行政处罚（听证）告知书
       - 行政处罚告知书
+    title_excludes_any:
+      - 审批表
   法制审核意见书:
     title_contains_all:
       - 法制审核
@@ -165,32 +142,21 @@ deterministic_document_matchers:
       - 案件调查报告
       - 案件调查终结报告
       - 调查终结报告
-  取证记录:
-    section_kinds:
-      - evidence_material
-    title_excludes_any:
-      - 身份证
-      - 主体资格
-      - 营业执照
-      - 执法证
-      - 法律职业资格
-      - 工作证明
-      - 授权委托
-    material_excludes_any:
-      - 身份证
-      - 主体资格
-      - 营业执照
-      - 执法证
-      - 法律职业资格
-      - 工作证明
-  证件信息:
-    section_kinds:
-      - evidence_material
+  法定代表人身份证明书:
+    title_contains_all:
+      - 法定代表人
+      - 身份证明书
+  营业执照:
     title_contains_any:
-      - 身份证
-      - 主体资格证明
       - 营业执照
+      - 商事主体登记证
+  身份证:
+    title_contains_any:
+      - 居民身份证
+      - 身份证复印件
+      - 身份证件
     title_excludes_any:
+      - 身份证明书
       - 执法证
       - 法律职业资格
   催告书:
@@ -222,6 +188,109 @@ deterministic_document_matchers:
       - 行政处罚
       - 决定
       - 审批
+  案件调查审批表:
+    title_contains_all:
+      - 案件调查
+      - 审批
+  行政处罚（听证）告知书审批表:
+    title_contains_all:
+      - 行政处罚
+      - 告知书
+      - 审批
+  不予行政处罚决定审批表:
+    title_contains_all:
+      - 不予行政处罚
+      - 审批
+  不予行政处罚决定书:
+    title_contains_all:
+      - 不予行政处罚
+      - 决定书
+    title_excludes_any:
+      - 审批
+  关于公示行政处罚信息的告知:
+    title_contains_all:
+      - 公示
+      - 行政处罚信息
+      - 告知
+  关于延期缴纳罚款的申请书:
+    title_contains_all:
+      - 延期
+      - 缴纳罚款
+      - 申请
+  协助调查通知书:
+    title_contains_all:
+      - 协助调查
+      - 通知书
+  放弃陈述、申辩权利的声明和尽快作出行政处罚决定申请书:
+    title_contains_all:
+      - 放弃
+      - 陈述
+      - 申辩
+      - 尽快作出行政处罚决定
+  广东省行政执法信息公示平台公示凭证或截图:
+    title_contains_all:
+      - 行政执法信息公示平台
+      - 公示
+    title_contains_any:
+      - 凭证
+      - 截图
+  行政处罚执行情况:
+    title_contains_all:
+      - 行政处罚
+      - 执行情况
+  行政处罚案卷封面:
+    title_contains_any:
+      - 行政处罚案卷
+      - 案卷封面
+  送达地址确认书:
+    title_contains_all:
+      - 送达地址
+      - 确认书
+  执法证1:
+    title_contains_any:
+      - 行政执法证
+      - 执法证复印件
+    title_excludes_any:
+      - 法律职业资格
+  执法证2:
+    title_contains_any:
+      - 行政执法证
+      - 执法证复印件
+    title_excludes_any:
+      - 法律职业资格
+  法律适用告知（行政处罚决定书）:
+    title_contains_any:
+      - 法律法规摘要
+      - 法律依据摘要
+    previous_section_title_contains_any:
+      - 行政处罚决定书
+    previous_section_title_excludes_any:
+      - 当场行政处罚决定书
+  法律适用告知（当场行政处罚决定书）:
+    title_contains_any:
+      - 法律法规摘要
+      - 法律依据摘要
+    previous_section_title_contains_any:
+      - 当场行政处罚决定书
+  法律适用告知（责令改正通知书）:
+    title_contains_any:
+      - 法律法规摘要
+      - 法律依据摘要
+    previous_section_title_contains_any:
+      - 责令改正通知书
+      - 责令改正违法行为通知书
+      - 责令限期改正通知书
+      - 责令限期整改指令书
+  法律适用告知（行政处罚（听证）告知书）:
+    title_contains_any:
+      - 法律法规摘要
+      - 法律依据摘要
+    previous_section_title_contains_any:
+      - 行政处罚事先告知书
+      - 行政处罚听证告知书
+      - 行政处罚事先（听证）告知书
+      - 行政处罚（听证）告知书
+      - 行政处罚告知书
   行政处罚延期（分期）缴纳罚款决定书:
     title_contains_all:
       - 延期
@@ -306,8 +375,3 @@ deterministic_document_matchers:
     title_contains_all:
       - 办案期限
       - 审批
-
-excluded_section_title_keywords:
-  证件信息:
-    - 执法证
-    - 法律职业资格证书

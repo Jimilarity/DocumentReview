@@ -214,7 +214,7 @@ class ReviewResultCoordinator:
                         pdf_page,
                         document_page,
                     ) + remainder
-                    continue
+                    content = issue["content"]
 
                 exact_sections = [
                     section
@@ -234,13 +234,89 @@ class ReviewResultCoordinator:
                     )
                     for section in exact_sections
                 ]
-                issue["content"] = "".join(prefixes) + content
+                missing_prefixes = [
+                    prefix for prefix in prefixes if prefix not in content
+                ]
+                if missing_prefixes:
+                    issue["content"] = "".join(missing_prefixes) + content
         return enriched
+
+    @staticmethod
+    def _overall_advice_from_scored_results(
+        scored_results: List[Dict[str, Any]],
+    ) -> str | None:
+        """以每条规则已校验的建议为准生成完整、连续编号的总建议。"""
+
+        advice_items: List[str] = []
+        numbered_item_pattern = re.compile(
+            r"(?:^|\n|(?<=。))\s*\d+[.、．]\s*(?=【|《|请|补|更|删|修|核|将|在)"
+        )
+        for result in scored_results:
+            if result.get("error") or not result.get("issues"):
+                continue
+            advice = str(result.get("AI修改建议") or "").strip()
+            if not advice or advice == NO_REVISION_NEEDED:
+                continue
+            starts = list(numbered_item_pattern.finditer(advice))
+            if not starts:
+                advice_items.append(advice)
+                continue
+            for index, match in enumerate(starts):
+                start = match.end()
+                end = (
+                    starts[index + 1].start()
+                    if index + 1 < len(starts)
+                    else len(advice)
+                )
+                item = advice[start:end].strip()
+                if item:
+                    advice_items.append(item)
+        if not advice_items:
+            return None
+        return "\n".join(
+            f"{index}. {item}"
+            for index, item in enumerate(advice_items, start=1)
+        )
 
     @staticmethod
     def _normalize_number(value: float | int) -> float | int:
         normalized = round(float(value), 4)
         return int(normalized) if normalized.is_integer() else normalized
+
+    @staticmethod
+    def remove_discarded_issues(
+        results: List[Dict[str, Any]],
+        processing_result: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """从评分缓存中移除后处理已确认不是最终问题的候选。"""
+
+        discarded = {
+            candidate_id
+            for candidate_id in (
+                processing_result.get("discarded_candidate_ids") or []
+            )
+            if isinstance(candidate_id, str)
+        }
+        cleaned = copy.deepcopy(results)
+        if not discarded:
+            return cleaned
+
+        candidate_number = 0
+        for result in cleaned:
+            if result.get("error"):
+                continue
+            retained_issues = []
+            for issue in result.get("issues") or []:
+                content = str(issue.get("content") or "").strip()
+                if not content:
+                    retained_issues.append(issue)
+                    continue
+                candidate_number += 1
+                candidate_id = f"C{candidate_number:04d}"
+                if candidate_id not in discarded:
+                    retained_issues.append(issue)
+            result["issues"] = retained_issues
+        return cleaned
 
     @classmethod
     def build_scored_result_payload(
@@ -268,8 +344,24 @@ class ReviewResultCoordinator:
             and not isinstance(result.get("规则满分"), bool)
             and float(result["规则满分"]) > 0
         ]
+        problematic_legality_results = [
+            result
+            for result in scored_results
+            if result.get("规则类别") == "合法性"
+            and not result.get("error")
+            and bool(result.get("issues"))
+        ]
+        problematic_legality_rule_indexes = sorted(
+            {
+                int(result["rule_index"])
+                for result in problematic_legality_results
+                if isinstance(result.get("rule_index"), int)
+            }
+        )
 
-        advice = processing_result.get("overall_revision_advice")
+        advice = cls._overall_advice_from_scored_results(scored_results)
+        if advice is None:
+            advice = processing_result.get("overall_revision_advice")
         if not isinstance(advice, str) or not advice.strip():
             advice = (
                 REVISION_ADVICE_UNAVAILABLE
@@ -289,7 +381,11 @@ class ReviewResultCoordinator:
                 max(0.0, min(100.0, 100.0 * actual_score / maximum_score))
             )
 
-        legality_score = remaining_score(legality_deductions)
+        legality_score = (
+            0
+            if problematic_legality_results
+            else remaining_score(legality_deductions)
+        )
         normalized_compliance_score = compliance_score()
         total_score = cls._normalize_number(
             max(
@@ -300,12 +396,56 @@ class ReviewResultCoordinator:
             )
         )
 
+        if compliance_scores:
+            compliance_actual_score = cls._normalize_number(
+                sum(score for score, _ in compliance_scores)
+            )
+            compliance_maximum_score = cls._normalize_number(
+                sum(maximum for _, maximum in compliance_scores)
+            )
+            score_explanation = (
+                "合规性得分=规范性规则实际得分"
+                f"{compliance_actual_score}÷规范性规则满分"
+                f"{compliance_maximum_score}×100="
+                f"{normalized_compliance_score}。"
+            )
+        else:
+            score_explanation = (
+                "本次没有可参与计分的规范性规则，合规性得分按100分计算。"
+            )
+
+        if problematic_legality_results:
+            rule_indexes = "、".join(
+                str(rule_index)
+                for rule_index in problematic_legality_rule_indexes
+            )
+            legality_problem_text = (
+                f"规则{rule_indexes}属于合法性规则，且被检查出有问题，"
+                if rule_indexes
+                else "存在合法性规则被检查出有问题，"
+            )
+            score_explanation += (
+                f" {legality_problem_text}"
+                "根据“合法性规则出现问题，此案卷不合格”，"
+                f"最终合法性规则得分为0，总得分为{total_score}。"
+            )
+        else:
+            legality_deduction_total = cls._normalize_number(
+                sum(legality_deductions)
+            )
+            score_explanation += (
+                " 合法性得分=100-合法性规则扣分合计"
+                f"{legality_deduction_total}={legality_score}，"
+                f"总得分为{total_score}。"
+            )
+
         return {
             "规则评分": scored_results,
             "评分汇总": {
                 "合法性得分": legality_score,
                 "合规性得分": normalized_compliance_score,
                 "总得分": total_score,
+                "评分计算说明": score_explanation,
                 "整体修改建议": advice.strip(),
             },
         }
@@ -436,7 +576,11 @@ class ReviewResultCoordinator:
                 )
 
             try:
-                scored_raw_results = await self.score_raw_results(raw_results)
+                scoring_input = self.remove_discarded_issues(
+                    raw_results,
+                    processing_result,
+                )
+                scored_raw_results = await self.score_raw_results(scoring_input)
                 scored_result_payload = self.build_scored_result_payload(
                     scored_raw_results,
                     processing_result,

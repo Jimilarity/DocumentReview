@@ -120,6 +120,9 @@ def _resolve_document_presence(
     cache: StructuredFieldCache,
     document_names: List[str],
     dir_info: List[Dict[str, Any]],
+    ocr_results: List[Dict[str, Any]],
+    *,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, bool]:
     """共享案件事实；范围扩展时废弃整份旧结构化缓存快照。"""
 
@@ -161,6 +164,8 @@ def _resolve_document_presence(
                 DocumentMappingAgents().classify_document_presence(
                     unresolved_names,
                     dir_info,
+                    ocr_results,
+                    rules_path=rules_path,
                 )
             )
         except Exception as exc:
@@ -230,6 +235,8 @@ def _build_document_rule_sets(
         cache,
         required_names,
         dir_info,
+        ocr_results,
+        rules_path=rules_path,
     )
 
     rule_sets = {
@@ -272,6 +279,8 @@ def _ensure_human_support_document_presence(
     file_path: str | Path,
     required_names: List[str],
     document_presence: Dict[str, bool],
+    *,
+    rules_path: str | Path = RULES_PATH,
 ) -> Dict[str, bool]:
     """补齐人工辅助独有文书，使其不依赖某个审查执行器是否启用。"""
 
@@ -291,6 +300,8 @@ def _ensure_human_support_document_presence(
         cache,
         _ordered_union([document_presence, required_names]),
         dir_info,
+        ocr_results,
+        rules_path=rules_path,
     )
 
 
@@ -401,6 +412,7 @@ async def prepare_context_sensitive_review(
         file_path,
         _present_document_names(document_presence),
         settings=settings,
+        rules_path=rules_path,
     ).prepare()
     rule_set = _filter_rule_set_by_mapping(
         ReviewExecutorType.CONTEXT_SENSITIVE,
@@ -427,6 +439,8 @@ def _presence_for_custom_rule_set(
     file_path: str,
     executor_type: ReviewExecutorType,
     rule_set: RuleSet,
+    *,
+    rules_path: str | Path = RULES_PATH,
 ) -> tuple[RuleSet, Dict[str, bool]]:
     cache_paths = get_cache_paths(file_path)
     meta_info = read_json(cache_paths.metadata)
@@ -446,6 +460,8 @@ def _presence_for_custom_rule_set(
         cache,
         required_names,
         dir_info,
+        ocr_results,
+        rules_path=rules_path,
     )
     executor_class = EXECUTOR_REGISTRY[executor_type]
     return (
@@ -490,6 +506,7 @@ async def _run_custom_executor(
                     file_path,
                     executor_type,
                     rule_set,
+                    rules_path=rules_path,
                 )
             )
         if not selected_rule_set.rules:
@@ -505,6 +522,7 @@ async def _run_custom_executor(
                 file_path,
                 _present_document_names(document_presence),
                 settings=settings,
+                rules_path=rules_path,
             ).prepare()
             selected_rule_set = _filter_rule_set_by_mapping(
                 executor_type,
@@ -606,6 +624,7 @@ async def run_review(
                 file_path,
                 support_document_names,
                 document_presence,
+                rules_path=rules_path,
             )
             human_support_rule_set = _build_human_support_rule_set(
                 candidate_human_support_rules,
@@ -747,6 +766,7 @@ async def run_review(
             file_path,
             mapping_names,
             settings=settings,
+            rules_path=rules_path,
         ).prepare()
         if mapping_names
         else {}

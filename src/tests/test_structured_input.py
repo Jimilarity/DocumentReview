@@ -91,10 +91,18 @@ class StructuredInputTest(unittest.TestCase):
                 cache.document_section_map["行政处罚决定书"],
                 [2, 3],
             )
+            self.assertEqual(
+                directory_info[2]["section_name"],
+                "当场行政处罚决定书",
+            )
+            self.assertEqual(
+                directory_info[2]["normalized_document_type"],
+                "行政处罚决定书",
+            )
             self.assertIsNone(cache.sections["2"]["处罚依据"])
             self.assertEqual(
                 cache.sections["3"]["罚款金额小写"],
-                1000.0,
+                "1000",
             )
             event = cache.delivery_events(4)[0]
             self.assertEqual(event["案件编号"], "A-001")
@@ -213,11 +221,13 @@ class StructuredMainFlowTest(unittest.IsolatedAsyncioTestCase):
             prepare_json.assert_called_once_with(
                 source_path,
                 0b11110000,
+                rules_path=main_module.RULES_PATH,
             )
             run_pdf_pre_review.assert_not_awaited()
             run_review.assert_awaited_once_with(
                 str(source_path),
                 0b11110000,
+                rules_path=main_module.RULES_PATH,
             )
 
 

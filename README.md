@@ -96,9 +96,9 @@ REVIEW_TEXT_BASE_URL=
 REVIEW_TEXT_API_KEY=
 REVIEW_TEXT_TEMPERATURE=0
 
-# 只能填写小写 true 或 false；不需要模型思考模式时保持 false
 PRE_REVIEW_ENABLE_THINKING=false
 REVIEW_ENABLE_THINKING=false
+
 ```
 
 `PRE_REVIEW_ENABLE_THINKING` 控制 OCR、目录识别和案情提取等预审调用，
@@ -384,6 +384,7 @@ PDF 案卷相同的规则可追溯性、缓存隔离和结果文件结构。
     "合法性得分": 100,
     "合规性得分": 99.5,
     "总得分": 99.5,
+    "评分计算说明": "……",
     "整体修改建议": "……"
   }
 }

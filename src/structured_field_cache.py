@@ -18,7 +18,7 @@ TECHNICAL_MAPPING_FAILURE = -1
 EVENT_KEY_PREFIX = "event:"
 
 FieldExtractor = Callable[
-    [int, List[str]],
+    [int, str, List[str]],
     Awaitable[Dict[str, Any]],
 ]
 DeliveryFieldExtractor = Callable[
@@ -72,7 +72,9 @@ class StructuredFieldCache:
         self._field_extractor: FieldExtractor | None = None
         self._delivery_field_extractor: DeliveryFieldExtractor | None = None
         self._state_lock = asyncio.Lock()
-        self._field_inflight: Dict[tuple[int, str], asyncio.Task[Any]] = {}
+        self._field_inflight: Dict[
+            tuple[int, str, str], asyncio.Task[Any]
+        ] = {}
         self._delivery_field_inflight: Dict[
             tuple[int, str, str], asyncio.Task[Any]
         ] = {}
@@ -285,7 +287,7 @@ class StructuredFieldCache:
         key = self._section_key(section_id)
         metadata = self.section_metadata.setdefault(
             key,
-            {"document_type": None},
+            {"document_type": None, "document_types": []},
         )
         if not isinstance(metadata, dict):
             raise TypeError(f"section_id={section_id} 的元数据必须是对象")
@@ -297,6 +299,19 @@ class StructuredFieldCache:
                 f"section_id={section_id} 的 document_type "
                 "必须是非空字符串或 null"
             )
+        document_types = metadata.setdefault(
+            "document_types",
+            [document_type] if document_type is not None else [],
+        )
+        if not isinstance(document_types, list) or any(
+            not isinstance(value, str) or not value
+            for value in document_types
+        ):
+            raise TypeError(
+                f"section_id={section_id} 的 document_types 必须是非空字符串数组"
+            )
+        if document_type is not None and document_type not in document_types:
+            document_types.insert(0, document_type)
         return metadata
 
     def register_section(self, section_id: int, document_type: str) -> None:
@@ -304,16 +319,38 @@ class StructuredFieldCache:
             raise TypeError("文书类型必须是非空字符串")
         self._section(section_id)
         metadata = self._metadata(section_id)
-        existing_type = metadata["document_type"]
-        if existing_type is not None and existing_type != document_type:
-            raise ValueError(
-                f"section_id={section_id} 已登记为文书类型 {existing_type}，"
-                f"不能再次登记为 {document_type}"
+        existing_types = list(metadata["document_types"])
+        if (
+            existing_types
+            and document_type not in existing_types
+            and not document_types_may_share_section(
+                [*existing_types, document_type]
             )
-        metadata["document_type"] = document_type
+        ):
+            raise ValueError(
+                f"section_id={section_id} 已登记为文书类型 {existing_types}，"
+                f"不能再登记不相容类型 {document_type}"
+            )
+        if document_type not in existing_types:
+            existing_types.append(document_type)
+        metadata["document_types"] = existing_types
+        if metadata["document_type"] is None:
+            metadata["document_type"] = document_type
 
-    def document_type(self, section_id: int) -> str:
-        document_type = self._metadata(section_id)["document_type"]
+    def document_type(
+        self,
+        section_id: int,
+        preferred_document_type: str | None = None,
+    ) -> str:
+        metadata = self._metadata(section_id)
+        if preferred_document_type is not None:
+            if preferred_document_type not in metadata["document_types"]:
+                raise KeyError(
+                    f"section_id={section_id} 未登记文书类型 "
+                    f"{preferred_document_type}"
+                )
+            return preferred_document_type
+        document_type = metadata["document_type"]
         if document_type is None:
             raise KeyError(f"section_id={section_id} 尚未登记文书类型")
         return document_type
@@ -348,18 +385,34 @@ class StructuredFieldCache:
     ) -> None:
         self._section(section_id).update(fields)
 
-    async def get_field(self, section_id: int, field_name: str) -> Any:
-        values = await self.get_fields(section_id, [field_name])
+    async def get_field(
+        self,
+        section_id: int,
+        field_name: str,
+        *,
+        document_type: str | None = None,
+    ) -> Any:
+        values = await self.get_fields(
+            section_id,
+            [field_name],
+            document_type=document_type,
+        )
         return values[field_name]
 
     async def get_fields(
         self,
         section_id: int,
         field_names: Iterable[str],
+        *,
+        document_type: str | None = None,
     ) -> Dict[str, Any]:
         """透明读取普通字段；未命中时立即提取并同步写回。"""
 
         requested = list(dict.fromkeys(field_names))
+        extraction_document_type = self.document_type(
+            section_id,
+            document_type,
+        )
         tasks: set[asyncio.Task[Any]] = set()
         async with self._state_lock:
             section = self._section(section_id)
@@ -367,7 +420,11 @@ class StructuredFieldCache:
             for field_name in requested:
                 if field_name in section:
                     continue
-                key = (int(section_id), field_name)
+                key = (
+                    int(section_id),
+                    extraction_document_type,
+                    field_name,
+                )
                 task = self._field_inflight.get(key)
                 if task is None:
                     new_fields.append(field_name)
@@ -378,10 +435,20 @@ class StructuredFieldCache:
                 if self._field_extractor is None:
                     raise RuntimeError("普通字段提取器尚未绑定")
                 task = asyncio.create_task(
-                    self._extract_and_store_fields(section_id, new_fields)
+                    self._extract_and_store_fields(
+                        section_id,
+                        extraction_document_type,
+                        new_fields,
+                    )
                 )
                 for field_name in new_fields:
-                    self._field_inflight[(int(section_id), field_name)] = task
+                    self._field_inflight[
+                        (
+                            int(section_id),
+                            extraction_document_type,
+                            field_name,
+                        )
+                    ] = task
                 tasks.add(task)
 
         if tasks:
@@ -394,13 +461,18 @@ class StructuredFieldCache:
     async def _extract_and_store_fields(
         self,
         section_id: int,
+        document_type: str,
         field_names: List[str],
     ) -> None:
         task = asyncio.current_task()
         try:
             if self._field_extractor is None:
                 raise RuntimeError("普通字段提取器尚未绑定")
-            extracted = await self._field_extractor(section_id, field_names)
+            extracted = await self._field_extractor(
+                section_id,
+                document_type,
+                field_names,
+            )
             if set(extracted) != set(field_names):
                 raise ValueError("普通字段提取结果与请求字段不一致")
             async with self._state_lock:
@@ -413,7 +485,7 @@ class StructuredFieldCache:
         finally:
             async with self._state_lock:
                 for field_name in field_names:
-                    key = (int(section_id), field_name)
+                    key = (int(section_id), document_type, field_name)
                     if self._field_inflight.get(key) is task:
                         self._field_inflight.pop(key, None)
 

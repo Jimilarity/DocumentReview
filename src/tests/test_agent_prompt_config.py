@@ -130,11 +130,11 @@ class AgentPromptConfigTest(unittest.TestCase):
         self.assertIn("不是页面实际标题", system_prompt)
         self.assertIn("不得自行", system_prompt)
         self.assertIn("唯一的评价标准", system_prompt)
-        self.assertIn("疑似 OCR 错误", system_prompt)
+        self.assertIn("孤立乱码", system_prompt)
         self.assertIn("不得使用模型记忆中的法条", system_prompt)
         self.assertIn("issue 准入条件", system_prompt)
         self.assertIn("日期、时间、编号和金额的书写格式从宽判断", system_prompt)
-        self.assertIn("证据不足时宁可不报", system_prompt)
+        self.assertIn("明确空白、完整字段值", system_prompt)
         self.assertIn("只用于定位和辨识", task_prompt)
         self.assertIn("按 page_index 顺序", task_prompt)
         self.assertIn("页眉页脚", task_prompt)
@@ -151,9 +151,17 @@ class AgentPromptConfigTest(unittest.TestCase):
         self.assertIn("case_metadata 只用于", task_prompt)
         self.assertIn("只审查当前 section 是否出现该字段", task_prompt)
         self.assertIn("不得仅因该文号与案卷元数据或其他文书文号不同", task_prompt)
-        self.assertIn("不得自行推断其还应包含哪些子字段", task_prompt)
-        self.assertIn("只有当前规则明确列出具体字段时", task_prompt)
-        self.assertIn("必须调用图片工具确认", task_prompt)
+        self.assertNotIn("不得自行推断其还应包含哪些子字段", task_prompt)
+        self.assertIn("概括性审查对象", task_prompt)
+        self.assertIn("直接组成要素逐项核对", task_prompt)
+        self.assertIn("孤立乱码", task_prompt)
+        self.assertIn("规则明确设置的适用条件", system_prompt)
+        self.assertIn("明确条件先适用、再审查", task_prompt)
+        self.assertIn("不得自行假设", task_prompt)
+        self.assertIn("具体 review_rule 中的条件", task_prompt)
+        self.assertIn("未达到门槛时", task_prompt)
+        self.assertIn("提交前自洽检查", task_prompt)
+        self.assertIn("不得同时输出", task_prompt)
 
     def test_consistency_prompt_forbids_cross_rule_legal_conclusions(
         self,
@@ -219,6 +227,8 @@ class AgentPromptConfigTest(unittest.TestCase):
         )
         self.assertIn("执法人员拍摄的现场照片", captured["task_prompt"])
         self.assertIn("当场行政处罚决定书", captured["task_prompt"])
+        self.assertIn("document_definitions", captured["task_prompt"])
+        self.assertIn("review_targets", captured["task_prompt"])
 
     def test_document_presence_must_cover_all_requested_names(self) -> None:
         agents = DocumentMappingAgents.__new__(DocumentMappingAgents)
@@ -257,15 +267,15 @@ class AgentPromptConfigTest(unittest.TestCase):
 
         self.assertEqual(len(result.mappings), 3)
 
-        with self.assertRaisesRegex(ValueError, "不能同时映射"):
-            DocumentSectionMappingResult.model_validate(
-                {
-                    "mappings": [
-                        {"document_name": "文书A", "section_ids": [10]},
-                        {"document_name": "文书B", "section_ids": [10]},
-                    ]
-                }
-            )
+        conflicting = DocumentSectionMappingResult.model_validate(
+            {
+                "mappings": [
+                    {"document_name": "文书A", "section_ids": [10]},
+                    {"document_name": "文书B", "section_ids": [10]},
+                ]
+            }
+        )
+        self.assertEqual(len(conflicting.mappings), 2)
 
 
 class StructuredOutputRetryTest(unittest.IsolatedAsyncioTestCase):

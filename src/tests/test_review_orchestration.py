@@ -255,11 +255,14 @@ class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
                     cache,
                     ["文书A", "文书B"],
                     [],
+                    [],
                 )
 
             check_presence.assert_called_once_with(
                 ["文书A", "文书B"],
                 [],
+                [],
+                rules_path=review.RULES_PATH,
             )
 
             rebuilt = StructuredFieldCache.load(
@@ -383,6 +386,7 @@ class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
                 ReviewExecutorType.CONTEXT_FREE,
                 ReviewExecutorType.CONTEXT_SENSITIVE,
             ],
+            review.RULES_PATH,
         )
         preparation_class.assert_called_once()
         preparation.prepare.assert_awaited_once_with()
@@ -578,6 +582,7 @@ class ReviewOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         executor = ContextSensitiveReviewExecutor.__new__(
             ContextSensitiveReviewExecutor
         )
+        executor.file_path = Path("case.pdf")
         executor.last_preparation_result = None
         executor.run_preparation = AsyncMock(
             return_value={"preparation_completed": True}

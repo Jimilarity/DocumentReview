@@ -21,13 +21,14 @@ from agent_trace import (
     agent_trace_config,
     trace_event,
 )
+from constants import RULES_PATH
 from errors.handler import CURRENT_PAGE_INDEX
 from model_config import build_text_model, build_vision_model
 from tools import inspect_current_section_images, inspect_page_image
 from utils import extract_json, load_yaml, read_env_bool, strip_thinking_content
 from reviewers.document_mapping import (
+    document_type_definitions,
     directory_info_for_mapping,
-    document_types_may_share_section,
     load_compatible_document_type_groups,
 )
 
@@ -247,24 +248,6 @@ class DocumentSectionMappingResult(SchemaModel):
         document_names = [mapping.document_name for mapping in self.mappings]
         if len(document_names) != len(set(document_names)):
             raise ValueError("同一文书类型不得重复出现在映射结果中")
-
-        section_owners: dict[int, list[str]] = {}
-        for mapping in self.mappings:
-            for section_id in mapping.section_ids:
-                existing_owners = section_owners.setdefault(section_id, [])
-                if (
-                    existing_owners
-                    and not document_types_may_share_section(
-                        [*existing_owners, mapping.document_name]
-                    )
-                ):
-                    raise ValueError(
-                        f"section_id={section_id} 不能同时映射到文书类型 "
-                        f"{existing_owners} 和 {mapping.document_name}；"
-                        "只有同一相容类型组内的文书类型可以共享 section"
-                    )
-                if mapping.document_name not in existing_owners:
-                    existing_owners.append(mapping.document_name)
         return self
 
 
@@ -1197,6 +1180,9 @@ class DocumentMappingAgents(StructuredReviewAgents):
         self,
         document_names: Sequence[str],
         dir_info: Sequence[dict[str, Any]],
+        ocr_results: Sequence[dict[str, Any]] | None = None,
+        *,
+        rules_path: str | Path = RULES_PATH,
     ) -> dict[str, bool]:
         expected_names = list(dict.fromkeys(document_names))
         prompt = self.build_task_prompt(
@@ -1207,12 +1193,17 @@ class DocumentMappingAgents(StructuredReviewAgents):
                 indent=2,
             ),
             dir_info=json.dumps(
-                directory_info_for_mapping(dir_info),
+                directory_info_for_mapping(dir_info, ocr_results),
                 ensure_ascii=False,
                 indent=2,
             ),
             compatible_document_type_groups=json.dumps(
                 load_compatible_document_type_groups(),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            document_definitions=json.dumps(
+                document_type_definitions(expected_names, rules_path),
                 ensure_ascii=False,
                 indent=2,
             ),

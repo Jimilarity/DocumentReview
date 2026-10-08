@@ -138,6 +138,83 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0]["AI修改建议"], "无需修改。")
         agents.ainvoke_rule_scoring.assert_not_awaited()
 
+    async def test_full_score_and_no_revision_clears_non_issue_statement(
+        self,
+    ) -> None:
+        agents = FakeRuleScoringAgents(
+            RuleScoringOutput(
+                scores=[
+                    RuleScoreDraft(
+                        rule_index=304,
+                        score=2,
+                        explanation="满分2分，扣0分，剩余2分。仅供参考。",
+                        ai_revision_advice="无需修改。",
+                    )
+                ]
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            processor = RuleScoreProcessor(
+                rules_path=self.build_rules_file(Path(temp_dir)),
+                agents=agents,
+                max_tries=1,
+            )
+            results = await processor.process(
+                [
+                    {
+                        "rule_index": 304,
+                        "issues": [
+                            {
+                                "section_ids": [1],
+                                "content": "符合规定，未发现问题。",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(results[0]["issues"], [])
+        self.assertEqual(results[0]["扣分"], 0)
+        self.assertEqual(results[0]["AI修改建议"], "无需修改。")
+
+    async def test_full_score_clears_non_issue_without_fixed_advice_phrase(
+        self,
+    ) -> None:
+        agents = FakeRuleScoringAgents(
+            RuleScoringOutput(
+                scores=[
+                    RuleScoreDraft(
+                        rule_index=304,
+                        score=2,
+                        explanation="满分2分，扣0分，剩余2分。仅供参考。",
+                        ai_revision_advice="该项已经符合要求。",
+                    )
+                ]
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            processor = RuleScoreProcessor(
+                rules_path=self.build_rules_file(Path(temp_dir)),
+                agents=agents,
+                max_tries=1,
+            )
+            results = await processor.process(
+                [
+                    {
+                        "rule_index": 304,
+                        "issues": [
+                            {
+                                "section_ids": [1],
+                                "content": "符合规定，未发现问题。",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(results[0]["issues"], [])
+        self.assertEqual(results[0]["AI修改建议"], "无需修改。")
+
     async def test_invalid_model_score_uses_local_fallback(self) -> None:
         agents = FakeRuleScoringAgents(
             RuleScoringOutput(
@@ -199,6 +276,47 @@ class RuleScoringTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("没有具体评分细则", explanation)
         self.assertIn("参考扣分0.2分", explanation)
         self.assertIn("参考得分1.8分", explanation)
+
+    async def test_revision_advice_cannot_invent_or_drop_issue_location(self) -> None:
+        agents = FakeRuleScoringAgents(
+            RuleScoringOutput(
+                scores=[
+                    RuleScoreDraft(
+                        rule_index=304,
+                        score=1.5,
+                        explanation="满分2分，扣0.5分，剩余1.5分。仅供参考。",
+                        ai_revision_advice=(
+                            "请修改【PDF第99页《错误文书》第1页】的地点。"
+                        ),
+                    )
+                ]
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            processor = RuleScoreProcessor(
+                rules_path=self.build_rules_file(Path(temp_dir)),
+                agents=agents,
+                max_tries=1,
+            )
+            results = await processor.process(
+                [
+                    {
+                        "rule_index": 304,
+                        "issues": [
+                            {
+                                "section_ids": [1],
+                                "content": (
+                                    "【PDF第3页《检查笔录》第1页】未填写检查地点。"
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        advice = results[0]["AI修改建议"]
+        self.assertIn("【PDF第3页《检查笔录》第1页】", advice)
+        self.assertNotIn("PDF第99页", advice)
 
 
 if __name__ == "__main__":

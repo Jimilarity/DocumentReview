@@ -609,6 +609,56 @@ class ScoredResultSummaryTest(unittest.TestCase):
             "【PDF第42页《行政处罚告知书》第2页】未告知陈述申辩权。",
         )
 
+    def test_preserves_first_location_and_adds_other_exact_section(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            directory_path = temp_path / "directory.json"
+            ocr_path = temp_path / "ocr.json"
+            directory_path.write_text(
+                json.dumps(
+                    [
+                        {"section_id": 1, "section_name": "决定书", "section_page": 0},
+                        {"section_id": 2, "section_name": "回证", "section_page": 1},
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            ocr_path.write_text(
+                json.dumps(
+                    [
+                        {"image_index": 0, "document_content": "决定书"},
+                        {"image_index": 1, "document_content": "回证"},
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            coordinator = object.__new__(ReviewResultCoordinator)
+            coordinator.cache_paths = SimpleNamespace(
+                directory=directory_path,
+                ocr_results=ocr_path,
+            )
+            enriched = coordinator.enrich_issue_locations(
+                [
+                    {
+                        "rule_index": 104,
+                        "issues": [
+                            {
+                                "section_ids": [1, 2],
+                                "content": (
+                                    "【PDF第1页《决定书》第1页】两份文书记载不一致。"
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        content = enriched[0]["issues"][0]["content"]
+        self.assertIn("【PDF第1页《决定书》第1页】", content)
+        self.assertIn("【PDF第2页《回证》第1页】", content)
+
     def test_calculates_category_and_total_scores_with_zero_floor(self) -> None:
         payload = ReviewResultCoordinator.build_scored_result_payload(
             [
@@ -643,6 +693,12 @@ class ScoredResultSummaryTest(unittest.TestCase):
         self.assertEqual(payload["评分汇总"]["合规性得分"], 75)
         self.assertEqual(payload["评分汇总"]["总得分"], 0)
         self.assertEqual(
+            payload["评分汇总"]["评分计算说明"],
+            "合规性得分=规范性规则实际得分7.5÷规范性规则满分10×100=75。 "
+            "存在合法性规则被检查出有问题，根据“合法性规则出现问题，"
+            "此案卷不合格”，最终合法性规则得分为0，总得分为0。",
+        )
+        self.assertEqual(
             payload["评分汇总"]["整体修改建议"],
             "优先修正合法性问题。",
         )
@@ -665,11 +721,21 @@ class ScoredResultSummaryTest(unittest.TestCase):
         )
 
         self.assertEqual(payload["评分汇总"]["合规性得分"], 100)
+        self.assertEqual(
+            payload["评分汇总"]["评分计算说明"],
+            "本次没有可参与计分的规范性规则，合规性得分按100分计算。 "
+            "合法性得分=100-合法性规则扣分合计0=100，总得分为100。",
+        )
 
-    def test_total_score_combines_legality_and_normalized_compliance(self) -> None:
+    def test_any_legality_issue_forces_case_score_to_zero(self) -> None:
         payload = ReviewResultCoordinator.build_scored_result_payload(
             [
-                {"规则类别": "合法性", "扣分": 10, "issues": [{}]},
+                {
+                    "rule_index": 105,
+                    "规则类别": "合法性",
+                    "扣分": 10,
+                    "issues": [{}],
+                },
                 {
                     "规则类别": "规范性",
                     "规则满分": 10,
@@ -681,9 +747,104 @@ class ScoredResultSummaryTest(unittest.TestCase):
             {"overall_revision_advice": "按问题修改。"},
         )
 
-        self.assertEqual(payload["评分汇总"]["合法性得分"], 90)
+        self.assertEqual(payload["评分汇总"]["合法性得分"], 0)
         self.assertEqual(payload["评分汇总"]["合规性得分"], 80)
-        self.assertEqual(payload["评分汇总"]["总得分"], 70)
+        self.assertEqual(payload["评分汇总"]["总得分"], 0)
+        self.assertEqual(
+            payload["评分汇总"]["评分计算说明"],
+            "合规性得分=规范性规则实际得分8÷规范性规则满分10×100=80。 "
+            "规则105属于合法性规则，且被检查出有问题，根据“合法性规则出现问题，"
+            "此案卷不合格”，最终合法性规则得分为0，总得分为0。",
+        )
+
+    def test_discarded_non_issue_is_removed_from_scored_rule_results(self) -> None:
+        cleaned = ReviewResultCoordinator.remove_discarded_issues(
+            [
+                {
+                    "rule_index": 142,
+                    "issues": [
+                        {
+                            "section_ids": [1],
+                            "content": "符合规定，未发现问题。",
+                        }
+                    ],
+                },
+                {
+                    "rule_index": 147,
+                    "issues": [
+                        {"section_ids": [2], "content": "未告知申辩权。"}
+                    ],
+                },
+            ],
+            {"discarded_candidate_ids": ["C0001"]},
+        )
+
+        self.assertEqual(cleaned[0]["issues"], [])
+        self.assertEqual(len(cleaned[1]["issues"]), 1)
+
+    def test_score_explanation_lists_failed_legality_rules(self) -> None:
+        payload = ReviewResultCoordinator.build_scored_result_payload(
+            [
+                {
+                    "rule_index": 105,
+                    "规则类别": "合法性",
+                    "扣分": 100,
+                    "issues": [{}],
+                },
+                {
+                    "rule_index": 147,
+                    "规则类别": "合法性",
+                    "扣分": 100,
+                    "issues": [{}],
+                },
+                {
+                    "规则类别": "规范性",
+                    "规则满分": 95,
+                    "分数": 83.9,
+                    "扣分": 11.1,
+                    "issues": [{}],
+                },
+            ],
+            {"overall_revision_advice": "按问题修改。"},
+        )
+
+        self.assertEqual(
+            payload["评分汇总"]["评分计算说明"],
+            "合规性得分=规范性规则实际得分83.9÷规范性规则满分95×100=88.3158。 "
+            "规则105、147属于合法性规则，且被检查出有问题，根据“合法性规则出现问题，"
+            "此案卷不合格”，最终合法性规则得分为0，总得分为0。",
+        )
+
+    def test_overall_advice_is_rebuilt_from_all_scored_rule_advice(self) -> None:
+        payload = ReviewResultCoordinator.build_scored_result_payload(
+            [
+                {
+                    "rule_index": 301,
+                    "规则类别": "规范性",
+                    "规则满分": 2,
+                    "分数": 1,
+                    "扣分": 1,
+                    "issues": [{"content": "问题一"}],
+                    "AI修改建议": "1. 【PDF第3页《甲》第1页】补充签名。",
+                },
+                {
+                    "rule_index": 302,
+                    "规则类别": "规范性",
+                    "规则满分": 2,
+                    "分数": 1,
+                    "扣分": 1,
+                    "issues": [{"content": "问题二"}],
+                    "AI修改建议": "1. 【PDF第4页《乙》第1页】补充日期。",
+                },
+            ],
+            {"overall_revision_advice": "模型漏掉第二项。"},
+        )
+
+        self.assertEqual(
+            payload["评分汇总"]["整体修改建议"],
+            "1. 【PDF第3页《甲》第1页】补充签名。\n"
+            "2. 【PDF第4页《乙》第1页】补充日期。",
+        )
 
 
 if __name__ == "__main__":

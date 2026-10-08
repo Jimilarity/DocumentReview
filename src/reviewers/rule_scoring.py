@@ -17,6 +17,12 @@ RULE_CATEGORY_LABELS = {
     "附加项": "附加项",
 }
 
+LOCATION_TAG_PATTERN = re.compile(
+    r"【(?:PDF第\d+页《[^》]+》第\d+页"
+    r"|《[^》]+》PDF第\d+页(?:（文书第\d+页）)?"
+    r"|《[^》]+》文书第\d+页)】"
+)
+
 
 class RuleScoreProcessor:
     """从 raw review results 生成带规则级参考分数的独立结果。"""
@@ -103,6 +109,39 @@ class RuleScoreProcessor:
             "请依据本规则列出的各条问题逐项修正文书，并核对修改后的内容"
             "与案卷事实、原始材料一致。"
         )
+
+    @staticmethod
+    def _location_safe_revision_advice(
+        issues: List[Dict[str, Any]],
+        model_advice: str,
+    ) -> str:
+        """拒绝模型编造或遗漏 issue 已有定位，必要时按 issue 确定性回退。"""
+
+        allowed_locations = {
+            location
+            for issue in issues
+            for location in LOCATION_TAG_PATTERN.findall(
+                str(issue.get("content") or "")
+            )
+        }
+        advice_locations = set(LOCATION_TAG_PATTERN.findall(model_advice))
+        if (
+            not model_advice.strip()
+            or advice_locations - allowed_locations
+            or not allowed_locations.issubset(advice_locations)
+        ):
+            items = []
+            for index, issue in enumerate(issues, start=1):
+                content = str(issue.get("content") or "").strip()
+                if not content:
+                    continue
+                items.append(
+                    f"{index}. {content}；请针对上述问题核对原始文书并修正，"
+                    "修改后复核与案卷事实一致。"
+                )
+            if items:
+                return "\n".join(items)
+        return model_advice
 
     def _prepare_results(
         self,
@@ -373,12 +412,27 @@ class RuleScoreProcessor:
             score_item = scores_by_index.get(result.get("rule_index"))
             if score_item is None:
                 continue
+            maximum_score = self.rules_by_index[result["rule_index"]][
+                "评分细则"
+            ]["分值"]
+            ai_revision_advice = str(score_item.ai_revision_advice).strip()
+            if float(score_item.score) == float(maximum_score):
+                # 满分、零扣分与“仍存在问题”在结果语义上互相矛盾。这里以
+                # 已通过程序校验的评分结论为准统一收口，不依赖模型是否刚好
+                # 输出某一句固定措辞，避免任何规则把合规结论留在 issues。
+                result["issues"] = []
+                ai_revision_advice = "无需修改。"
+            else:
+                ai_revision_advice = self._location_safe_revision_advice(
+                    result.get("issues") or [],
+                    ai_revision_advice,
+                )
             self._set_score(
                 result,
                 self.rule_categories_by_index.get(result.get("rule_index")),
-                self.rules_by_index[result["rule_index"]]["评分细则"]["分值"],
+                maximum_score,
                 score_item.score,
                 score_item.explanation,
-                score_item.ai_revision_advice,
+                ai_revision_advice,
             )
         return scored_results

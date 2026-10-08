@@ -38,7 +38,7 @@ class ReviewConfigurationTest(unittest.TestCase):
         settings = load_context_sensitive_settings()
         case_level_items = load_case_level_review_items()
 
-        self.assertEqual(STRUCTURED_FIELD_CACHE_SCHEMA_VERSION, 6)
+        self.assertEqual(STRUCTURED_FIELD_CACHE_SCHEMA_VERSION, 11)
         self.assertEqual(
             settings["service_receipt_document_type"],
             "送达回证",
@@ -206,17 +206,22 @@ class StructuredFieldCacheTest(unittest.TestCase):
                 {"立案审批表": [3]},
             )
 
-    def test_one_section_can_only_have_one_document_type(self) -> None:
+    def test_one_section_accepts_only_compatible_document_types(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache = StructuredFieldCache.load(
                 Path(directory) / "structured_fields.json",
                 schema_version=2,
                 source_fingerprint="source-a",
             )
-            cache.register_section(3, "立案审批表")
+            cache.register_section(3, "证件信息")
+            cache.register_section(3, "法定代表人身份证明书")
 
-            self.assertEqual(cache.document_type(3), "立案审批表")
-            with self.assertRaisesRegex(ValueError, "不能再次登记"):
+            self.assertEqual(cache.document_type(3), "证件信息")
+            self.assertEqual(
+                cache.document_type(3, "法定代表人身份证明书"),
+                "法定代表人身份证明书",
+            )
+            with self.assertRaisesRegex(ValueError, "不相容类型"):
                 cache.register_section(3, "行政处罚决定书")
 
     def test_compatible_evidence_mapping_can_share_section(self) -> None:
@@ -476,8 +481,8 @@ class StructuredFieldReadThroughTest(unittest.IsolatedAsyncioTestCase):
             cache.register_section(3, "立案审批表")
             calls = []
 
-            async def extractor(section_id, field_names):
-                calls.append((section_id, tuple(field_names)))
+            async def extractor(section_id, document_type, field_names):
+                calls.append((section_id, document_type, tuple(field_names)))
                 await asyncio.sleep(0)
                 return {field_name: None for field_name in field_names}
 
@@ -489,7 +494,7 @@ class StructuredFieldReadThroughTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertIsNone(first)
             self.assertIsNone(second)
-            self.assertEqual(calls, [(3, ("案件来源",))])
+            self.assertEqual(calls, [(3, "立案审批表", ("案件来源",))])
             self.assertTrue(cache.path.is_file())
 
     async def test_fields_in_one_request_are_extracted_together(self) -> None:
@@ -502,7 +507,7 @@ class StructuredFieldReadThroughTest(unittest.IsolatedAsyncioTestCase):
             cache.register_section(3, "立案审批表")
             calls = []
 
-            async def extractor(section_id, field_names):
+            async def extractor(section_id, document_type, field_names):
                 calls.append(tuple(field_names))
                 return {field_name: "值" for field_name in field_names}
 
@@ -929,7 +934,9 @@ class PrewarmPlanTest(unittest.TestCase):
             ContextSensitiveReviewExecutor
         )
         executor.structured_field_cache = SimpleNamespace(
-            document_type=lambda section_id: "检查笔录"
+            document_type=lambda section_id, preferred=None: (
+                preferred or "检查笔录"
+            )
         )
         executor.context_settings = {
             "service_receipt_document_type": "送达回证",
@@ -996,6 +1003,65 @@ class PrewarmPlanTest(unittest.TestCase):
 
 
 class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_contextual_rule_without_receipt_anchor_keeps_all_sources_together(
+        self,
+    ) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.context_settings = {
+            "service_receipt_document_type": "送达回证"
+        }
+        combined = [
+            ConsistencySource(
+                document_type="立案审批表",
+                section_id=3,
+                field_name="立案日期",
+                required=False,
+                value="2024-01-01",
+            ),
+            ConsistencySource(
+                document_type="行政处罚决定书",
+                section_id=8,
+                field_name="决定日期",
+                required=False,
+                value="2024-05-01",
+            ),
+            ConsistencySource(
+                document_type="送达回证",
+                section_id=10,
+                field_name="送达日期",
+                required=False,
+                value="2024-05-02",
+            ),
+        ]
+        executor.collect_consistency_sources = AsyncMock(
+            return_value=combined
+        )
+        rule = {
+            "上下文相关审查事项": [
+                {
+                    "任务": "程序合法",
+                    "字段": {
+                        "立案审批表": [
+                            {"field": "立案日期", "required": False}
+                        ],
+                        "行政处罚决定书": [
+                            {"field": "决定日期", "required": False}
+                        ],
+                        "送达回证": [
+                            {"field": "送达日期", "required": False}
+                        ],
+                    },
+                }
+            ]
+        }
+
+        groups = await executor.collect_consistency_source_groups(rule, 0)
+
+        self.assertEqual(groups, [combined])
+        executor.collect_consistency_sources.assert_awaited_once_with(rule, 0)
+
     async def test_receipt_group_keeps_only_its_corresponding_document_section(
         self,
     ) -> None:
@@ -1242,6 +1308,82 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
             '"field_category": "辅助支撑"',
             agent.build_task_prompt.call_args.kwargs["sources"],
         )
+        self.assertEqual(
+            agent.build_task_prompt.call_args.kwargs["source_documents"],
+            "[]",
+        )
+
+    async def test_context_prompt_keeps_null_fields_and_adds_mapped_ocr(self) -> None:
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        source = ConsistencySource(
+            document_type="立案审批表",
+            section_id=3,
+            field_name="案件来源",
+            required=False,
+            value=None,
+            field_category="审查对象",
+        )
+        executor.collect_consistency_sources = AsyncMock(return_value=[source])
+        executor.collect_external_knowledge = AsyncMock(return_value=[])
+        executor.context = SimpleNamespace(
+            meta_info={},
+            dir_info=[
+                {
+                    "section_id": 3,
+                    "section_name": "立案审批表",
+                    "section_page": 0,
+                }
+            ],
+            ocr_results=[
+                {
+                    "image_index": 0,
+                    "document_content": "案件来源：____",
+                }
+            ],
+        )
+        agent = SimpleNamespace(
+            build_task_prompt=MagicMock(return_value="prompt"),
+            ainvoke_contextual_legality_review=AsyncMock(
+                return_value=SimpleNamespace(issues=[])
+            ),
+        )
+        executor.require_context_sensitive_agents = lambda: agent
+        executor.settings = SimpleNamespace(agent_recursion_limit=10)
+
+        await executor.run_contextual_legality_item(
+            {
+                "上下文相关审查事项": [
+                    {
+                        "任务": "程序合法",
+                        "字段": {},
+                        "审查事项": "审查案件来源",
+                    }
+                ]
+            },
+            0,
+        )
+
+        kwargs = agent.build_task_prompt.call_args.kwargs
+        self.assertIn('"value": null', kwargs["sources"])
+        self.assertIn("案件来源：____", kwargs["source_documents"])
+        self.assertIn('"pdf_page_number": 1', kwargs["source_documents"])
+
+    def test_hearing_baseline_is_only_injected_for_hearing_review(self) -> None:
+        self.assertFalse(
+            ContextSensitiveReviewExecutor._needs_hearing_applicability(
+                {
+                    "审查事项": "审查办案期限",
+                    "评查说明": "听证、检测期间不计入办案期限。",
+                }
+            )
+        )
+        self.assertTrue(
+            ContextSensitiveReviewExecutor._needs_hearing_applicability(
+                {"审查事项": "审查是否依法告知听证权"}
+            )
+        )
 
     async def test_generic_context_task_reports_only_missing_required_fields(self) -> None:
         executor = ContextSensitiveReviewExecutor.__new__(
@@ -1341,6 +1483,67 @@ class ConsistencyExecutionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["issues"], [])
         self.assertEqual(set(result), {"issues"})
+
+
+class CaseBaselineGuardTest(unittest.TestCase):
+    @staticmethod
+    def build_executor(sections):
+        executor = ContextSensitiveReviewExecutor.__new__(
+            ContextSensitiveReviewExecutor
+        )
+        executor.structured_field_cache = StructuredFieldCache(
+            Path("structured_fields.json"),
+            schema_version=STRUCTURED_FIELD_CACHE_SCHEMA_VERSION,
+            source_fingerprint="test",
+            payload={
+                "schema_version": STRUCTURED_FIELD_CACHE_SCHEMA_VERSION,
+                "source_fingerprint": "test",
+                "preparation_completed": True,
+                "document_presence": {},
+                "document_section_map": {},
+                "sections": sections,
+                "section_metadata": {},
+            },
+        )
+        return executor
+
+    def test_organization_fine_below_hearing_threshold_is_not_applicable(self) -> None:
+        executor = self.build_executor(
+            {
+                "1": {
+                    "当事人类型": "法人",
+                    "法人名称": "甲公司",
+                    "罚款金额（小写）": "5000.00",
+                },
+                "2": {"是否放弃陈述、申辩权利": "是"},
+            }
+        )
+
+        result = executor._hearing_applicability()
+
+        self.assertEqual(result["当事人类型"], "法人或其他组织")
+        self.assertEqual(result["适用通用门槛"], 100000.0)
+        self.assertFalse(result["是否达到通用听证金额门槛"])
+        self.assertTrue(result["书面放弃陈述申辩权利"])
+
+    def test_ambiguous_signature_cannot_override_organization_party(self) -> None:
+        executor = self.build_executor(
+            {
+                "1": {"当事人类型": "法人", "法人名称": "甲公司"},
+                "2": {"当事人姓名": "张三"},
+            }
+        )
+        baseline = executor._case_party_baseline()
+
+        discarded = executor._issue_conflicts_with_case_baseline(
+            "《法律法规摘要》当事人姓名为张三，与法人主体甲公司不一致，"
+            "存在将自然人错误认定为处罚对象的问题。",
+            baseline,
+            None,
+            {"section_ids": [2]},
+        )
+
+        self.assertTrue(discarded)
 
 
 class ContextSensitiveTraceRoutingTest(unittest.IsolatedAsyncioTestCase):

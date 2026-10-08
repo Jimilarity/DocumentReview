@@ -2,6 +2,7 @@ import logging
 import unittest
 
 from external_knowledge import (
+    KNOWLEDGE_UNAVAILABLE_NOTE,
     KnowledgeContext,
     KnowledgeItem,
     KnowledgeRegistry,
@@ -29,6 +30,11 @@ def build_context() -> KnowledgeContext:
 
 
 class KnowledgeServiceTest(unittest.IsolatedAsyncioTestCase):
+    def test_unavailable_note_preserves_explicit_rule_standards(self) -> None:
+        self.assertIn("规则自身已经明确写明", KNOWLEDGE_UNAVAILABLE_NOTE)
+        self.assertIn("仍是有效且应当直接适用", KNOWLEDGE_UNAVAILABLE_NOTE)
+        self.assertNotIn("办理时限或其他规范性参考资料", KNOWLEDGE_UNAVAILABLE_NOTE)
+
     def test_default_registry_contains_documented_knowledge_functions(
         self,
     ) -> None:

@@ -1,7 +1,9 @@
 import ast
 import asyncio
 import json
+import re
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, List
 
 from langgraph.graph import END, StateGraph
@@ -65,6 +67,10 @@ _NOTES_ESCAPE_PAIRS = (
     ("\\'", "'"),
     ("\\\\", "\\"),
 )
+
+_HEARING_NATURAL_PERSON_FINE_THRESHOLD = Decimal("5000")
+_HEARING_ORGANIZATION_FINE_THRESHOLD = Decimal("100000")
+_MONEY_PATTERN = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)(?!\d)")
 
 
 def _valid_field_value(field_type: str, value: Any) -> bool:
@@ -191,6 +197,235 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             raise RuntimeError("结构化字段缓存尚未初始化")
         return self.structured_field_cache
 
+    @staticmethod
+    def _iter_structured_records(value: Any) -> Iterable[Dict[str, Any]]:
+        """遍历结构化缓存记录，同时兼容普通 section 和送达事件嵌套结构。"""
+
+        if not isinstance(value, dict):
+            return
+        if any(not isinstance(item, dict) for item in value.values()):
+            yield value
+        for item in value.values():
+            if isinstance(item, dict):
+                yield from ContextSensitiveReviewExecutor._iter_structured_records(
+                    item
+                )
+
+    def _case_party_baseline(self) -> Dict[str, Any]:
+        """从全案已提取字段形成当事人基线，防止把代理人等角色当作当事人。"""
+
+        cache = getattr(self, "structured_field_cache", None)
+        records = (
+            list(self._iter_structured_records(cache.sections))
+            if isinstance(cache, StructuredFieldCache)
+            else []
+        )
+
+        def first_value(*field_names: str) -> Any:
+            for record in records:
+                for field_name in field_names:
+                    value = record.get(field_name)
+                    if value not in (None, "", [], {}):
+                        return value
+            return None
+
+        explicit_type = first_value("当事人类型", "行政相对人类型")
+        organization_name = first_value(
+            "法人名称", "非法人组织名称", "个体工商户字号名称"
+        )
+        credit_code = first_value(
+            "法人统一社会信用代码", "统一社会信用代码"
+        )
+        natural_name = first_value("自然人姓名")
+        natural_id = first_value("自然人证件号码")
+
+        party_type = "未知"
+        explicit_text = str(explicit_type or "")
+        if any(label in explicit_text for label in ("法人", "组织", "单位")):
+            party_type = "法人或其他组织"
+        elif "自然人" in explicit_text or "公民" in explicit_text:
+            party_type = "自然人"
+        elif organization_name or credit_code:
+            party_type = "法人或其他组织"
+        elif natural_name or natural_id:
+            party_type = "自然人"
+
+        return {
+            "当事人类型": party_type,
+            "法人或其他组织名称": organization_name,
+            "统一社会信用代码": credit_code,
+            "自然人姓名": natural_name if party_type == "自然人" else None,
+            "自然人证件号码": natural_id if party_type == "自然人" else None,
+            "角色区分要求": (
+                "驾驶员、送达人、签收人、代收人、代理人、受委托人、被询问人、"
+                "法定代表人等人员不是当然的受处罚当事人；只有材料明确将其认定为"
+                "责任承担主体时，才能按当事人核对。"
+            ),
+        }
+
+    @staticmethod
+    def _parse_money(value: Any) -> Decimal | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float, Decimal)):
+            try:
+                return Decimal(str(value))
+            except InvalidOperation:
+                return None
+        text = str(value).replace(",", "").replace("，", "")
+        matches = _MONEY_PATTERN.findall(text)
+        if not matches:
+            return None
+        try:
+            return max(Decimal(item) for item in matches)
+        except InvalidOperation:
+            return None
+
+    def _hearing_applicability(self) -> Dict[str, Any]:
+        """按已确认的通用金额门槛计算听证适用状态，未知时禁止直接判错。"""
+
+        cache = self.require_structured_field_cache()
+        records = list(self._iter_structured_records(cache.sections))
+        party = self._case_party_baseline()
+        preferred_fields = (
+            "罚款金额（小写）",
+            "罚款金额",
+            "拟处罚款金额",
+        )
+        amounts: List[Decimal] = []
+        for field_name in preferred_fields:
+            for record in records:
+                amount = self._parse_money(record.get(field_name))
+                if amount is not None:
+                    amounts.append(amount)
+            if amounts:
+                break
+
+        amount = max(amounts) if amounts else None
+        party_type = party["当事人类型"]
+        threshold = None
+        if party_type == "自然人":
+            threshold = _HEARING_NATURAL_PERSON_FINE_THRESHOLD
+        elif party_type == "法人或其他组织":
+            threshold = _HEARING_ORGANIZATION_FINE_THRESHOLD
+
+        if threshold is None or amount is None:
+            status = "待人工复核"
+            applicable = None
+            reason = "当事人类型或罚款金额无法从知识库可靠核验，不得直接判错。"
+        else:
+            applicable = amount >= threshold
+            status = "达到通用金额门槛" if applicable else "未达到通用金额门槛"
+            reason = (
+                f"本案当事人类型为{party_type}，可核验罚款金额为{amount:g}元；"
+                f"通用听证门槛为{threshold:g}元，以上含本数。"
+            )
+
+        waived_statement = any(
+            record.get("是否放弃陈述、申辩权利") is True
+            or str(record.get("是否放弃陈述、申辩权利") or "").strip()
+            in {"是", "已放弃", "同意", "true", "True", "1"}
+            for record in records
+        )
+        return {
+            "核验状态": status,
+            "是否达到通用听证金额门槛": applicable,
+            "当事人类型": party_type,
+            "可核验罚款金额": float(amount) if amount is not None else None,
+            "适用通用门槛": float(threshold) if threshold is not None else None,
+            "门槛说明": "自然人罚款5000元以上；法人或其他组织罚款100000元以上；以上含本数。",
+            "书面放弃陈述申辩权利": waived_statement,
+            "处理要求": (
+                f"{reason} 未达到通用门槛时，不得以未告知听证权、未等待听证期限"
+                "为由输出问题；但规则明确提供特别法更低门槛时从其规定。"
+                "特别法适用、主体类型或金额不能可靠确定时，结论为待人工复核，"
+                "不得直接输出违规 issue。陈述申辩期限应与听证期限分别判断。"
+            ),
+        }
+
+    def _issue_conflicts_with_case_baseline(
+        self,
+        content: str,
+        party_baseline: Dict[str, Any],
+        hearing: Dict[str, Any] | None,
+        issue_payload: Dict[str, Any] | None = None,
+    ) -> bool:
+        """剔除与程序已确认基线直接冲突的模型误判。"""
+
+        if hearing is not None:
+            below_threshold = (
+                hearing.get("是否达到通用听证金额门槛") is False
+            )
+            hearing_terms = ("听证权", "听证期限", "听证申请期限", "申请听证")
+            statement_terms = ("陈述", "申辩")
+            if (
+                below_threshold
+                and any(term in content for term in hearing_terms)
+                and not any(term in content for term in statement_terms)
+            ):
+                return True
+            if (
+                hearing.get("书面放弃陈述申辩权利") is True
+                and below_threshold
+                and ("提前" in content or "期限" in content)
+                and any(term in content for term in (*hearing_terms, *statement_terms))
+            ):
+                return True
+
+        if party_baseline.get("当事人类型") == "法人或其他组织":
+            organization_name = str(
+                party_baseline.get("法人或其他组织名称") or ""
+            )
+            alleges_person_name_mismatch = (
+                "当事人姓名" in content
+                or "姓名不一致" in content
+                or "无法确认是否为同一当事人" in content
+                or "将自然人错误认定为处罚对象" in content
+            )
+            if alleges_person_name_mismatch:
+                cache = getattr(self, "structured_field_cache", None)
+                section_ids = (
+                    issue_payload.get("section_ids") or []
+                    if isinstance(issue_payload, dict)
+                    else []
+                )
+                explicit_party_fields = {
+                    "当事人类型",
+                    "行政相对人类型",
+                    "法人名称",
+                    "非法人组织名称",
+                    "个体工商户字号名称",
+                    "法人统一社会信用代码",
+                    "统一社会信用代码",
+                    "自然人姓名",
+                    "自然人证件号码",
+                }
+                has_explicit_party_evidence = False
+                if isinstance(cache, StructuredFieldCache):
+                    for raw_section_id in section_ids:
+                        record = cache.sections.get(str(raw_section_id), {})
+                        if not isinstance(record, dict):
+                            continue
+                        if any(
+                            record.get(field_name) not in (None, "", [], {})
+                            for field_name in explicit_party_fields
+                        ):
+                            has_explicit_party_evidence = True
+                            break
+                refers_to_org_identity = (
+                    (organization_name and organization_name in content)
+                    or "法人名称" in content
+                    or "组织名称" in content
+                    or "统一社会信用代码" in content
+                )
+                # 仅从“签名/姓名”这类角色不明字段不能推出处罚对象变成自然人。
+                # 必须有主体类型、证件号或明确的自然人/法人身份字段支撑。
+                if not has_explicit_party_evidence:
+                    return True
+                if not refers_to_org_identity:
+                    return True
+        return False
+
     def _load_structured_field_cache(self) -> StructuredFieldCache:
         if self.structured_field_cache is not None:
             return self.structured_field_cache
@@ -237,9 +472,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         self,
         section_id: int,
         field_names: Iterable[str],
+        document_type: str | None = None,
     ) -> Dict[str, Dict[str, Any]]:
         cache = self.require_structured_field_cache()
-        document_type = cache.document_type(section_id)
+        document_type = cache.document_type(section_id, document_type)
         return self._specs_for_fields(
             document_type,
             field_names,
@@ -270,12 +506,16 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
     async def _extract_regular_fields(
         self,
         section_id: int,
+        document_type: str,
         field_names: List[str],
     ) -> Dict[str, Any]:
         cache = self.require_structured_field_cache()
         context = self.require_document_context()
-        specs = self._specs_for_section(section_id, field_names)
-        document_type = cache.document_type(section_id)
+        specs = self._specs_for_section(
+            section_id,
+            field_names,
+            document_type,
+        )
         ocr_text = extract_section_ocr_text(
             section_id,
             context.dir_info,
@@ -467,7 +707,11 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
     def _exact_pdf_location(self, section_id: int) -> Dict[str, int]:
         """仅在 section 恰好对应一页时提供可靠的 PDF 页码。"""
 
-        context = self.require_document_context()
+        # 构建提示词等轻量流程可能尚未初始化文档上下文；缺少页码不应
+        # 中断字段提取或规则审查，只需省略位置字段。
+        context = getattr(self, "context", None)
+        if context is None:
+            return {}
         try:
             start_page, end_page = section_page_range(
                 section_id,
@@ -849,9 +1093,8 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         del state, config
         cache = self._load_structured_field_cache()
         prewarm_by_document = self._prewarm_fields_by_document()
-        # section_metadata 只服务于上下文相关字段提取，不登记其他执行器
-        # 使用的映射标签。这样证据属性类型的相容映射不会改变字段缓存仍为
-        # 单一 document_type 的约束。
+        # 只登记上下文相关字段实际使用的映射标签；同一 section 可以登记
+        # 多个相容类型，字段提取时显式携带当前规则使用的文书类型。
         self._register_mapped_sections(cache, prewarm_by_document)
         context_settings = getattr(self, "context_settings", None)
         if context_settings is None:
@@ -860,32 +1103,41 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             "service_receipt_document_type"
         ]
 
-        section_fields: Dict[int, List[str]] = defaultdict(list)
+        section_fields: Dict[tuple[int, str], List[str]] = defaultdict(list)
         for document_type, field_names in prewarm_by_document.items():
             if document_type == receipt_document_type:
                 continue
             for section_id in self.document_section_map.get(document_type, []):
                 for field_name in field_names:
-                    if field_name not in section_fields[section_id]:
-                        section_fields[section_id].append(field_name)
+                    key = (section_id, document_type)
+                    if field_name not in section_fields[key]:
+                        section_fields[key].append(field_name)
 
         prewarmed_section_ids = []
         semaphore = asyncio.Semaphore(
             max(1, self.settings.model_max_concurrency)
         )
 
-        async def prewarm_regular(section_id: int, fields: List[str]) -> None:
+        async def prewarm_regular(
+            section_id: int,
+            document_type: str,
+            fields: List[str],
+        ) -> None:
             missing = cache.missing_fields(section_id, fields)
             if not missing:
                 return
             async with semaphore:
-                await cache.get_fields(section_id, missing)
+                await cache.get_fields(
+                    section_id,
+                    missing,
+                    document_type=document_type,
+                )
             prewarmed_section_ids.append(section_id)
 
         await asyncio.gather(
             *(
-                prewarm_regular(section_id, fields)
-                for section_id, fields in section_fields.items()
+                prewarm_regular(section_id, document_type, fields)
+                for (section_id, document_type), fields in section_fields.items()
             )
         )
 
@@ -1083,7 +1335,11 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         field_names = [item["field"] for item in field_items]
 
         async def collect_section(section_id: int) -> List[ConsistencySource]:
-            values = await cache.get_fields(section_id, field_names)
+            values = await cache.get_fields(
+                section_id,
+                field_names,
+                document_type=document_type,
+            )
             return [
                 ConsistencySource(
                     document_type=document_type,
@@ -1205,6 +1461,20 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             "service_receipt_document_type"
         ]
         if receipt_document_type not in available_fields:
+            return [
+                await self.collect_consistency_sources(
+                    rule,
+                    context_item_index,
+                )
+            ]
+
+        # 送达回证按关联文书拆组，是“一致性核查”用于逐份比对文号、日期的
+        # 专用机制。合法性、期限、事实证据等上下文审查通常需要同时看到多个
+        # 文书；若规则没有显式指定关联锚点，拆组会把成立结论所需的证据割裂。
+        if (
+            context_item.get("任务") != CONSISTENCY_TASK
+            and "送达回证关联文书" not in context_item
+        ):
             return [
                 await self.collect_consistency_sources(
                     rule,
@@ -1445,6 +1715,184 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         keys = ("任务", "评查类别", "审查事项", "评查说明")
         return {key: context_item.get(key, "") for key in keys}
 
+    @staticmethod
+    def _needs_hearing_applicability(
+        context_item: Dict[str, Any],
+    ) -> bool:
+        """仅为真正审查听证权或听证程序的事项注入门槛结论。
+
+        “办案期限扣除听证期间”等文字只是把听证作为时间事件提及，若也注入
+        听证门槛，会给模型增加与本事项无关的强提示并稀释真正的审查目标。
+        """
+
+        text = "\n".join(
+            str(context_item.get(key) or "")
+            for key in ("任务", "审查事项", "评查说明")
+        )
+        hearing_targets = (
+            "听证权",
+            "听证申请",
+            "申请听证",
+            "告知听证",
+            "听证告知",
+            "听证条件",
+            "听证门槛",
+            "组织听证",
+            "举行听证",
+            "听证程序",
+            "听证通知",
+            "听证笔录",
+            "听证报告",
+        )
+        return any(target in text for target in hearing_targets)
+
+    @staticmethod
+    def _compact_source_ocr(
+        ocr_text: str,
+        field_names: Iterable[str],
+        max_chars: int,
+    ) -> str:
+        """在提示词预算内保留页首、页尾和字段名附近的原始 OCR。"""
+
+        if max_chars <= 0 or not ocr_text:
+            return ""
+        if len(ocr_text) <= max_chars:
+            return ocr_text
+
+        window_radius = 550
+        ranges = [(0, min(2200, len(ocr_text)))]
+        tail_start = max(0, len(ocr_text) - 2200)
+        ranges.append((tail_start, len(ocr_text)))
+        for field_name in field_names:
+            field = str(field_name or "").strip()
+            if not field:
+                continue
+            candidates = [field]
+            simplified = re.sub(r"[（(].*?[）)]", "", field).strip()
+            if simplified and simplified != field:
+                candidates.append(simplified)
+            for candidate in candidates:
+                start = 0
+                while True:
+                    index = ocr_text.find(candidate, start)
+                    if index < 0:
+                        break
+                    ranges.append(
+                        (
+                            max(0, index - window_radius),
+                            min(
+                                len(ocr_text),
+                                index + len(candidate) + window_radius,
+                            ),
+                        )
+                    )
+                    start = index + len(candidate)
+                    if len(ranges) >= 24:
+                        break
+                if len(ranges) >= 24:
+                    break
+
+        merged: List[tuple[int, int]] = []
+        for start, end in sorted(ranges):
+            if merged and start <= merged[-1][1] + 80:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+
+        chunks: List[str] = []
+        used = 0
+        for start, end in merged:
+            remaining = max_chars - used
+            if remaining <= 0:
+                break
+            chunk = ocr_text[start:end]
+            if len(chunk) > remaining:
+                chunk = chunk[:remaining]
+            chunks.append(chunk)
+            used += len(chunk)
+        return "\n...[中间非相关 OCR 已压缩]...\n".join(chunks)
+
+    def _source_documents_for_group(
+        self,
+        group: List[ConsistencySource],
+        *,
+        max_total_chars: int = 24000,
+        max_section_chars: int = 10000,
+    ) -> List[Dict[str, Any]]:
+        """提供结构化提取失败时可回查的映射文书 OCR。"""
+
+        context = getattr(self, "context", None)
+        if (
+            context is None
+            or not hasattr(context, "dir_info")
+            or not hasattr(context, "ocr_results")
+        ):
+            return []
+
+        sections: Dict[int, Dict[str, Any]] = {}
+        order: List[int] = []
+        for source in group:
+            section_id = source.section_id
+            if section_id not in sections:
+                sections[section_id] = {
+                    "document_types": [],
+                    "field_names": [],
+                    "null_review_fields": 0,
+                    "null_fields": 0,
+                }
+                order.append(section_id)
+            entry = sections[section_id]
+            if source.document_type not in entry["document_types"]:
+                entry["document_types"].append(source.document_type)
+            if source.field_name not in entry["field_names"]:
+                entry["field_names"].append(source.field_name)
+            if source.value is None:
+                entry["null_fields"] += 1
+                if source.field_category == "审查对象":
+                    entry["null_review_fields"] += 1
+
+        order_index = {section_id: index for index, section_id in enumerate(order)}
+        ranked_section_ids = sorted(
+            order,
+            key=lambda section_id: (
+                -sections[section_id]["null_review_fields"],
+                -sections[section_id]["null_fields"],
+                order_index[section_id],
+            ),
+        )
+
+        documents: List[Dict[str, Any]] = []
+        remaining = max_total_chars
+        for section_id in ranked_section_ids:
+            if remaining <= 0:
+                break
+            try:
+                ocr_text = extract_section_ocr_text(
+                    section_id,
+                    context.dir_info,
+                    context.ocr_results,
+                )
+            except (KeyError, StopIteration, TypeError, ValueError):
+                continue
+            limit = min(max_section_chars, remaining)
+            compact_ocr = self._compact_source_ocr(
+                ocr_text,
+                sections[section_id]["field_names"],
+                limit,
+            )
+            if not compact_ocr:
+                continue
+            documents.append(
+                {
+                    "document_types": sections[section_id]["document_types"],
+                    "section_id": section_id,
+                    **self._exact_pdf_location(section_id),
+                    "ocr_text": compact_ocr,
+                }
+            )
+            remaining -= len(compact_ocr)
+        return documents
+
     async def run_contextual_legality_item(
         self,
         rule: Dict[str, Any],
@@ -1468,6 +1916,12 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
         )
         agents = self.require_context_sensitive_agents()
         review_item_payload = self._trimmed_review_item(context_item)
+        party_baseline = self._case_party_baseline()
+        review_item_payload["全案当事人基线"] = party_baseline
+        hearing = None
+        if self._needs_hearing_applicability(context_item):
+            hearing = self._hearing_applicability()
+            review_item_payload["听证门槛与权利期限核验"] = hearing
         if knowledge_items:
             external_knowledge_payload = json.dumps(
                 [item.content for item in knowledge_items],
@@ -1497,8 +1951,8 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     "value": source.value,
                 }
                 for source in group
-                if source.value is not None
             ]
+            source_documents = self._source_documents_for_group(group)
             prompt = self.require_context_sensitive_agents().build_task_prompt(
                 prompt_name,
                 review_item=json.dumps(
@@ -1506,6 +1960,10 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
                     ensure_ascii=False,
                 ),
                 sources=json.dumps(compact_sources, ensure_ascii=False),
+                source_documents=json.dumps(
+                    source_documents,
+                    ensure_ascii=False,
+                ),
                 external_knowledge=external_knowledge_payload,
             )
             result = await agents.ainvoke_contextual_legality_review(
@@ -1514,7 +1972,23 @@ class ContextSensitiveReviewExecutor(DocumentReviewExecutor):
             )
             if context_item["任务"] != NO_PENALTY_LEGALITY_TASK:
                 issues.extend(required_field_issues(group))
-            issues.extend(issue.model_dump() for issue in result.issues)
+            for issue in result.issues:
+                issue_payload = issue.model_dump()
+                content = str(issue_payload.get("content") or "")
+                if self._issue_conflicts_with_case_baseline(
+                    content,
+                    party_baseline,
+                    hearing,
+                    issue_payload,
+                ):
+                    self.logger.warning(
+                        "context issue discarded because it conflicts with "
+                        "verified case baseline. rule=%s content=%s",
+                        rule.get("序号"),
+                        content,
+                    )
+                    continue
+                issues.append(issue_payload)
         return {
             "issues": issues
         }

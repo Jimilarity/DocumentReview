@@ -22,6 +22,10 @@ from structured_field_cache import (
     StructuredFieldCache,
     build_structured_source_fingerprint,
 )
+from reviewers.document_mapping import (
+    deterministic_document_section_map,
+    normalize_document_section_map_lenient,
+)
 from utils import atomic_write_json, read_json
 
 
@@ -107,7 +111,10 @@ def _field_name_from_spec(
         return canonical_name
 
     suffix_match = PARENTHETICAL_FIELD_SUFFIX.fullmatch(canonical_name)
-    if suffix_match and suffix_match.group("name") in document_specs:
+    # 结构化平台常把英文键附在中文字段后，例如“案件编号（case_no）”。
+    # 即使该字段未进入当前规则字段表，也应去掉纯技术后缀并保留中文业务名，
+    # 避免同一字段因不同数据来源形成两个键。
+    if suffix_match:
         return suffix_match.group("name")
 
     for field_name, spec in document_specs.items():
@@ -194,6 +201,13 @@ def _normalize_section_fields(
             )
             if valid:
                 value = coerced_value
+        elif field_name.startswith("是否"):
+            # 结构化来源可能携带规则当前未使用、但后续关联仍会读取的布尔
+            # 字段。对明确的“是否”字段做同样的安全转换，避免“否”作为
+            # 非空字符串在布尔判断中被误认为 True。
+            valid, coerced_value = _coerce_configured_value(value, "bool")
+            if valid:
+                value = coerced_value
         normalized[field_name] = value
     return normalized
 
@@ -278,7 +292,7 @@ def prepare_structured_json(
     service_receipt_type = context_settings["service_receipt_document_type"]
 
     section_records: List[Dict[str, Any]] = []
-    document_section_map: Dict[str, List[int]] = defaultdict(list)
+    direct_document_section_map: Dict[str, List[int]] = defaultdict(list)
     source_document_section_map: Dict[str, List[int]] = defaultdict(list)
     for source_document_name, raw_value in source_data.items():
         if source_document_name.startswith("__"):
@@ -298,7 +312,7 @@ def prepare_structured_json(
                     "record": normalized_record,
                 }
             )
-            document_section_map[document_type].append(section_id)
+            direct_document_section_map[document_type].append(section_id)
             source_document_section_map[source_document_name].append(
                 section_id
             )
@@ -309,8 +323,10 @@ def prepare_structured_json(
     dir_info = [
         {
             "section_id": item["section_id"],
-            "section_name": item["document_type"],
+            "section_name": item["source_document_name"],
             "source_document_name": item["source_document_name"],
+            "normalized_document_type": item["document_type"],
+            "catalog_source": STRUCTURED_SOURCE_TYPE,
             "section_page": index,
             "section_end_page": index + 1,
         }
@@ -353,13 +369,32 @@ def prepare_structured_json(
         rule_type,
         rules_path,
     )
+    deterministic_mapping = deterministic_document_section_map(
+        required_names,
+        dir_info,
+    )
+    required_name_set = set(required_names)
+    combined_mapping: Dict[str, List[int]] = {
+        name: list(section_ids)
+        for name, section_ids in direct_document_section_map.items()
+        if name in required_name_set
+    }
+    for document_type, section_ids in deterministic_mapping.items():
+        combined_mapping.setdefault(document_type, []).extend(section_ids)
+    document_section_map, _ = normalize_document_section_map_lenient(
+        combined_mapping,
+        dir_info,
+        preferred_document_types=[
+            name
+            for name in direct_document_section_map
+            if name in required_name_set
+        ],
+    )
     presence = {
         name: bool(document_section_map.get(name))
         for name in required_names
     }
-    presence.update(
-        {name: True for name in document_section_map}
-    )
+    presence.update({name: True for name in document_section_map})
     cache.initialize_document_presence(presence)
     cache.initialize_document_section_map(dict(document_section_map))
 
@@ -375,8 +410,22 @@ def prepare_structured_json(
             field_specs,
             aliases,
         )
-        if document_type not in field_specs:
-            for field_name in required_fields.get(document_type, []):
+        mapped_document_types = [
+            mapped_type
+            for mapped_type, section_ids in document_section_map.items()
+            if section_id in section_ids
+        ]
+        for mapped_document_type in mapped_document_types:
+            if mapped_document_type != document_type:
+                fields.update(
+                    _normalize_section_fields(
+                        mapped_document_type,
+                        record,
+                        field_specs,
+                        aliases,
+                    )
+                )
+            for field_name in required_fields.get(mapped_document_type, []):
                 fields.setdefault(field_name, None)
         if document_type == service_receipt_type:
             event_text = json.dumps(record, ensure_ascii=False, indent=2)
